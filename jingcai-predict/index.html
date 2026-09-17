@@ -115,6 +115,22 @@ input{font-family:inherit;border:0;outline:0;background:none;color:var(--text)}
 .sp-item .t1{font-size:13px;font-weight:600}
 .sp-item .t2{font-size:11px;color:var(--text-sub)}
 .sp-item .go{margin-left:auto;color:var(--text-dim)}
+.sp-head{display:flex;align-items:center;justify-content:space-between}
+.sp-head h4{margin-bottom:0}
+.sp-clr{display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text-dim);padding:3px 8px;border-radius:7px}
+.sp-clr:hover{background:var(--surface-2);color:var(--text-sub)}
+.sp-del{margin-left:auto;color:var(--text-dim);padding:4px;border-radius:7px;display:flex;flex:none}
+.sp-del:hover{color:var(--danger);background:var(--surface-2)}
+.sp-chips{display:flex;flex-wrap:wrap;gap:8px;padding:4px 4px 10px}
+.sp-chips .chip{font-size:12px;color:var(--text);background:var(--surface-2);border:1px solid var(--border);padding:6px 12px;border-radius:999px;cursor:pointer;transition:transform .1s}
+.sp-chips .chip:active{transform:scale(.95)}
+.sp-item .avatar.ghost{background:var(--surface-3);color:var(--text-dim)}
+.sp-item mark{background:color-mix(in srgb,var(--primary) 28%,transparent);color:inherit;border-radius:3px;padding:0 1px}
+.sp-all{display:flex;align-items:center;gap:10px;padding:10px;margin:4px 8px 2px;border-radius:10px;background:color-mix(in srgb,var(--primary) 10%,transparent);border:1px dashed color-mix(in srgb,var(--primary) 40%,transparent);cursor:pointer}
+.sp-all:hover{background:color-mix(in srgb,var(--primary) 16%,transparent)}
+.sp-all .t1{font-size:13px;font-weight:600;color:var(--primary)}
+.sp-all .t2{font-size:11px;color:var(--text-sub)}
+.sp-all .go{margin-left:auto;color:var(--primary)}
 .sp-backdrop{position:fixed;inset:0;z-index:30;display:none}
 .sp-backdrop.show{display:block}
 .catbar{display:flex;gap:6px;padding:12px 14px 2px}
@@ -633,7 +649,7 @@ function reviewHTML(h){
   return [verdict,v1,v2,v3];
 }
 /* ================= State / Helpers ================= */
-const S={route:'matches',params:[],tab:'today',search:'',filter:null,mtab:'preview',otab:'wdl'};
+const S={route:'matches',params:[],tab:'today',search:'',searchFocus:false,filter:null,mtab:'preview',otab:'wdl'};
 let Favs=[];try{Favs=JSON.parse(localStorage.getItem('jc_favs'))||[]}catch(e){}
 const saveFavs=()=>{try{localStorage.setItem('jc_favs',JSON.stringify(Favs))}catch(e){}};
 const $=sel=>document.querySelector(sel);
@@ -693,19 +709,39 @@ function matchGroups(list,showDate){
     return `<div class="lg-group rv">${head}${arr.map(m=>matchRow(m,showDate)).join('')}</div>`;
   }).join('');
 }
-function searchPanelHTML(q){
-  q=q.trim().toLowerCase();if(!q)return '';
-  const mL=M.filter(m=>m.home.includes(q)||m.away.includes(q)||m.league.toLowerCase().includes(q)||m.num.includes(q)).slice(0,4);
-  const tL=TEAMS.filter(t=>t.n.includes(q)).slice(0,5);
+/* ================= 搜索 ================= */
+const HOT_SEARCH=['曼城','哈兰德','皇马','英超','拜仁','巴萨','曼联','巴黎圣日耳曼'];
+let SearchHist=[];try{SearchHist=JSON.parse(localStorage.getItem('jc_search_hist'))||[]}catch(e){}
+const saveSearchHist=()=>{try{localStorage.setItem('jc_search_hist',JSON.stringify(SearchHist.slice(0,10)))}catch(e){}};
+const addSearchHist=q=>{q=q.trim();if(!q)return;const i=SearchHist.indexOf(q);if(i>=0)SearchHist.splice(i,1);SearchHist.unshift(q);SearchHist=SearchHist.slice(0,10);saveSearchHist()};
+const hl=(s,q)=>{const i=s.toLowerCase().indexOf(q);if(i<0)return esc(s);return esc(s.slice(0,i))+'<mark>'+esc(s.slice(i,i+q.length))+'</mark>'+esc(s.slice(i+q.length))};
+const matchHit=(m,q)=>m.home.toLowerCase().includes(q)||m.away.toLowerCase().includes(q)||m.league.toLowerCase().includes(q)||m.num.toLowerCase().includes(q)||m.num.slice(2).includes(q);
+function searchIdleHTML(){
+  let h='';
+  const hist=SearchHist.slice(0,8);
+  if(hist.length)h+=`<div class="sp-group"><div class="sp-head"><h4>${ic('clock',13)} 搜索历史</h4><button class="sp-clr" data-act="sclrh">${ic('x',13)} 清空</button></div>
+    ${hist.map(x=>`<div class="sp-item" data-act="sgo" data-type="hist" data-v="${esc(x)}"><span class="avatar ghost">${ic('clock',14)}</span><div><div class="t1">${esc(x)}</div></div><button class="sp-del" data-act="sdel" data-v="${esc(x)}">${ic('x',14)}</button></div>`).join('')}</div>`;
+  h+=`<div class="sp-group"><div class="sp-head"><h4>${ic('flame',13)} 热门搜索</h4></div>
+    <div class="sp-chips">${HOT_SEARCH.map(x=>`<span class="chip" data-act="sgo" data-type="hot" data-v="${esc(x)}">${esc(x)}</span>`).join('')}</div></div>`;
+  return h;
+}
+function searchPanelHTML(){
+  const q=S.search.trim().toLowerCase();
+  if(!q)return S.searchFocus?searchIdleHTML():'';
+  const mL=M.filter(m=>matchHit(m,q));
+  const tL=TEAMS.filter(t=>t.n.toLowerCase().includes(q)).slice(0,5);
   const pL=PLAYERS.filter(p=>p.n.toLowerCase().includes(q)).slice(0,5);
   const lL=['英超','西甲','德甲','意甲','法甲','英冠','日职','韩K联','欧联'].filter(l=>l.includes(q)).slice(0,3);
   if(!mL.length&&!tL.length&&!pL.length&&!lL.length)
     return `<div class="empty" style="padding:24px 16px">${ic('search',30)}<p>未找到与“${esc(q)}”相关的联赛、球队、球员或比赛</p></div>`;
   let h='';
-  if(lL.length)h+=`<div class="sp-group"><h4>${ic('trophy',13)} 联赛</h4>${lL.map(l=>`<div class="sp-item" data-act="sgo" data-type="league" data-v="${l}"><span class="avatar" style="background:linear-gradient(135deg,var(--primary-strong),var(--primary));color:#04140b">${esc(l[0])}</span><div><div class="t1">${l}</div><div class="t2">竞彩足球 · 全部赛事</div></div><span class="go">${ic('right',14)}</span></div>`).join('')}</div>`;
-  if(tL.length)h+=`<div class="sp-group"><h4>${ic('shield',13)} 球队</h4>${tL.map(t=>`<div class="sp-item" data-act="sgo" data-type="team" data-v="${t.n}"><span class="avatar" style="background:${t.c}">${esc(t.n[0])}</span><div><div class="t1">${t.n}</div><div class="t2">${t.l} · ${M.filter(m=>m.home===t.n||m.away===t.n).length}场相关比赛</div></div><span class="go">${ic('right',14)}</span></div>`).join('')}</div>`;
-  if(pL.length)h+=`<div class="sp-group"><h4>${ic('user',13)} 球员</h4>${pL.map(p=>`<div class="sp-item" data-act="sgo" data-type="player" data-v="${p.n}" data-team="${p.t}"><span class="avatar">${esc(p.n[0])}</span><div><div class="t1">${p.n}</div><div class="t2">${p.t} · ${p.p}</div></div><span class="go">${ic('right',14)}</span></div>`).join('')}</div>`;
-  if(mL.length)h+=`<div class="sp-group"><h4>${ic('zap',13)} 比赛</h4>${mL.map(m=>`<div class="sp-item" data-act="sgo" data-type="match" data-id="${m.id}"><span class="avatar" style="font-size:10px">${m.num}</span><div><div class="t1">${m.home} vs ${m.away}</div><div class="t2">${m.league} · ${dayLabel(m.kickoff)} ${fmtTime(m.kickoff)}</div></div><span class="go">${ic('right',14)}</span></div>`).join('')}</div>`;
+  if(mL.length)h+=`<div class="sp-all" data-act="sgo" data-type="all" data-v="${esc(q)}">
+    <span style="color:var(--primary);display:flex">${ic('search',18)}</span>
+    <div><div class="t1">搜索全部相关比赛</div><div class="t2">共找到 ${mL.length} 场比赛</div></div><span class="go">${ic('right',16)}</span></div>`;
+  if(lL.length)h+=`<div class="sp-group"><h4>${ic('trophy',13)} 联赛</h4>${lL.map(l=>`<div class="sp-item" data-act="sgo" data-type="league" data-v="${l}"><span class="avatar" style="background:linear-gradient(135deg,var(--primary-strong),var(--primary));color:#04140b">${esc(l[0])}</span><div><div class="t1">${hl(l,q)}</div><div class="t2">${M.filter(m=>m.league===l).length}场相关比赛</div></div><span class="go">${ic('right',14)}</span></div>`).join('')}</div>`;
+  if(tL.length)h+=`<div class="sp-group"><h4>${ic('shield',13)} 球队</h4>${tL.map(t=>`<div class="sp-item" data-act="sgo" data-type="team" data-v="${t.n}"><span class="avatar" style="background:${t.c}">${esc(t.n[0])}</span><div><div class="t1">${hl(t.n,q)}</div><div class="t2">${t.l} · ${M.filter(m=>m.home===t.n||m.away===t.n).length}场相关比赛</div></div><span class="go">${ic('right',14)}</span></div>`).join('')}</div>`;
+  if(pL.length)h+=`<div class="sp-group"><h4>${ic('user',13)} 球员</h4>${pL.map(p=>`<div class="sp-item" data-act="sgo" data-type="player" data-v="${p.n}" data-team="${p.t}"><span class="avatar">${esc(p.n[0])}</span><div><div class="t1">${hl(p.n,q)}</div><div class="t2">${p.t} · ${p.p}</div></div><span class="go">${ic('right',14)}</span></div>`).join('')}</div>`;
+  if(mL.length)h+=`<div class="sp-group"><h4>${ic('zap',13)} 比赛</h4>${mL.slice(0,4).map(m=>`<div class="sp-item" data-act="sgo" data-type="match" data-id="${m.id}"><span class="avatar" style="font-size:10px">${esc(m.num.slice(2))}</span><div><div class="t1">${hl(m.home+' vs '+m.away,q)}</div><div class="t2">${m.league} · ${dayLabel(m.kickoff)} ${fmtTime(m.kickoff)}</div></div><span class="go">${ic('right',14)}</span></div>`).join('')}</div>`;
   return h;
 }
 
@@ -720,7 +756,7 @@ function viewMatches(){
   let list='';
   if(S.filter){
     const f=S.filter;
-    const fm=M.filter(m=>f.type==='league'?m.league===f.value:f.type==='team'?(m.home===f.value||m.away===f.value):(m.home===f.team||m.away===f.team))
+    const fm=M.filter(m=>f.type==='all'?matchHit(m,f.value.toLowerCase()):f.type==='league'?m.league===f.value:f.type==='team'?(m.home===f.value||m.away===f.value):(m.home===f.team||m.away===f.team))
       .sort((a,b)=>new Date(a.kickoff)-new Date(b.kickoff));
     list=`<div class="filter-chip rv">${ic('filter',15)}<b>筛选：${esc(f.label)}</b><button data-act="clr" style="display:flex;color:inherit;align-items:center">${ic('x',15)}</button></div>`
       +(fm.length?matchGroups(fm,true):`<div class="empty card rv" style="margin-top:14px">${ic('search',30)}<p>没有找到相关比赛，换个关键词试试</p></div>`);
@@ -1097,20 +1133,24 @@ function render(){
   else if(S.route==='detail')html=viewDetail(S.params[0]);
   else if(S.route==='result')html=viewResult(S.params[0]);
   viewEl().innerHTML=html||'<div class="empty"><p>页面不存在</p></div>';
+  updateSearchUI();
+  refreshCD();
+}
+function updateSearchUI(){
   const si=$('#searchInput');if(si)si.value=S.search;
   const panel=$('#searchPanel'),sb=$('#searchbar'),bd=$('#spBackdrop');
-  if(panel){panel.innerHTML=searchPanelHTML(S.search);panel.classList.toggle('show',!!S.search)}
+  const show=!!S.search||S.searchFocus;
+  if(panel){panel.innerHTML=searchPanelHTML();panel.classList.toggle('show',show)}
   if(sb)sb.classList.toggle('has',!!S.search);
-  if(bd)bd.classList.toggle('show',!!S.search);
-  refreshCD();
+  if(bd)bd.classList.toggle('show',show);
 }
 
 /* ============ 事件 ============ */
 document.addEventListener('click',e=>{
-  if(e.target&&e.target.id==='spBackdrop'){S.search='';render();return}
+  if(e.target&&e.target.id==='spBackdrop'){S.search='';S.searchFocus=false;render();return}
   const btn=e.target.closest('[data-act]');if(!btn)return;
   const act=btn.dataset.act,v=btn.dataset.v,id=btn.dataset.id;
-  if(act==='nav'){S.route=v;S.params=[];Stack.length=0;render()}
+  if(act==='nav'){S.route=v;S.params=[];Stack.length=0;S.search='';S.searchFocus=false;render()}
   else if(act==='cat'){S.tab=v;render()}
   else if(act==='open'){pushRoute('detail',id);render()}
   else if(act==='resopen'){pushRoute('result',id);render()}
@@ -1119,24 +1159,38 @@ document.addEventListener('click',e=>{
   else if(act==='otab'){S.otab=v;render()}
   else if(act==='back'){goBack()}
   else if(act==='sgo'){
-    S.search='';
+    if(btn.dataset.type==='hist'||btn.dataset.type==='hot'){
+      S.search=v;S.searchFocus=true;addSearchHist(v);updateSearchUI();
+      const si=$('#searchInput');if(si){si.value=v;si.focus()}
+      return;
+    }
+    S.search='';S.searchFocus=false;
     if(btn.dataset.type==='match'){pushRoute('detail',btn.dataset.id);render()}
+    else if(btn.dataset.type==='all'){S.filter={type:'all',value:v,label:v};S.route='matches';S.tab='today';render()}
     else if(btn.dataset.type==='league'){S.filter={type:'league',value:v,label:v};S.route='matches';S.tab='today';render()}
     else if(btn.dataset.type==='team'){S.filter={type:'team',value:v,label:v};S.route='matches';S.tab='today';render()}
     else {S.filter={type:'player',team:btn.dataset.team,label:v+'（'+btn.dataset.team+'）'};S.route='matches';S.tab='today';render()}
   }
-  else if(act==='sclr'){S.search='';render()}
+  else if(act==='sclr'){S.search='';updateSearchUI()}
+  else if(act==='sdel'){const i=SearchHist.indexOf(v);if(i>=0){SearchHist.splice(i,1);saveSearchHist();updateSearchUI()}}
+  else if(act==='sclrh'){SearchHist=[];saveSearchHist();updateSearchUI()}
   else if(act==='clr'){S.filter=null;render()}
   else if(act==='theme'){setTheme(v)}
 });
 document.addEventListener('input',e=>{
-  if(e.target&&e.target.id==='searchInput'){
-    S.search=e.target.value;
-    const panel=$('#searchPanel'),sb=$('#searchbar'),bd=$('#spBackdrop');
-    if(panel){panel.innerHTML=searchPanelHTML(S.search);panel.classList.toggle('show',!!S.search)}
-    if(sb)sb.classList.toggle('has',!!S.search);
-    if(bd)bd.classList.toggle('show',!!S.search);
+  if(e.target&&e.target.id==='searchInput'){S.search=e.target.value;updateSearchUI()}
+});
+document.addEventListener('keydown',e=>{
+  if(e.key==='Enter'&&e.target&&e.target.id==='searchInput'){
+    const q=S.search.trim();
+    if(q){addSearchHist(q);S.search='';S.searchFocus=false;S.filter={type:'all',value:q,label:q};S.route='matches';S.tab='today';render()}
   }
+});
+document.addEventListener('focusin',e=>{
+  if(e.target&&e.target.id==='searchInput'){S.searchFocus=true;updateSearchUI()}
+});
+document.addEventListener('focusout',e=>{
+  if(e.target&&e.target.id==='searchInput')setTimeout(()=>{if(!S.search){S.searchFocus=false;updateSearchUI()}},150);
 });
 function setTheme(t){document.documentElement.dataset.theme=t;try{localStorage.setItem('jc_theme',t)}catch(e){}render()}
 
