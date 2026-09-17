@@ -14,7 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -41,18 +41,21 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.jingcai.predict.data.MatchInfo
+import com.jingcai.predict.data.TodayMatches
+import com.jingcai.predict.data.TomorrowMatches
 import com.jingcai.predict.data.remote.JingCaiApi
 import com.jingcai.predict.data.remote.RemoteMatch
 import com.jingcai.predict.data.remote.SearchPlayer
 import com.jingcai.predict.data.remote.SearchTeam
 import com.jingcai.predict.data.remote.TeamDbApi
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 
 @Composable
@@ -63,13 +66,12 @@ fun SearchScreen(
     var query by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
     var hasSearched by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf(false) }
+    var jcFailed by remember { mutableStateOf(false) }   // 竞彩官网接口失败（已降级本地数据）
+    var tdFailed by remember { mutableStateOf(false) }   // TheSportsDB 失败
 
     var matches by remember { mutableStateOf<List<RemoteMatch>>(emptyList()) }
     var teams by remember { mutableStateOf<List<SearchTeam>>(emptyList()) }
     var players by remember { mutableStateOf<List<SearchPlayer>>(emptyList()) }
-    // 竞彩官网全量数据缓存，避免每次搜索重复拉取
-    var allMatches by remember { mutableStateOf<List<RemoteMatch>>(emptyList()) }
 
     val scope = rememberCoroutineScope()
 
@@ -78,20 +80,41 @@ fun SearchScreen(
         if (kw.isEmpty()) return
         scope.launch {
             loading = true
-            error = false
-            try {
-                val all = if (allMatches.isEmpty()) JingCaiApi.fetchMatches() else allMatches
-                allMatches = all
-                matches = all.filter {
-                    it.home.contains(kw, true) || it.away.contains(kw, true) ||
-                        it.league.contains(kw, true) || it.num.contains(kw, true)
+            jcFailed = false
+            tdFailed = false
+            // 三个数据源并行请求，总耗时 = 最慢单个
+            val jc = async {
+                try {
+                    JingCaiApi.fetchMatches()
+                } catch (e: Exception) {
+                    jcFailed = true
+                    emptyList()
                 }
-                teams = TeamDbApi.searchTeams(kw)
-                players = TeamDbApi.searchPlayers(kw)
-                hasSearched = true
-            } catch (e: Exception) {
-                error = true
             }
+            val td = async {
+                try {
+                    val t = TeamDbApi.searchTeams(kw)
+                    val p = TeamDbApi.searchPlayers(kw)
+                    t to p
+                } catch (e: Exception) {
+                    tdFailed = true
+                    emptyList<SearchTeam>() to emptyList<SearchPlayer>()
+                }
+            }
+            val jcMatches = jc.await()
+            val (teamList, playerList) = td.await()
+
+            // 竞彩接口失败时降级为本地模拟数据，保证中文球队/联赛搜索仍可用
+            val source = if (jcMatches.isNotEmpty()) jcMatches
+            else (TodayMatches + TomorrowMatches).map { it.toRemote() }
+
+            matches = source.filter {
+                it.home.contains(kw, true) || it.away.contains(kw, true) ||
+                    it.league.contains(kw, true) || it.num.contains(kw, true)
+            }
+            teams = teamList
+            players = playerList
+            hasSearched = true
             loading = false
         }
     }
@@ -147,14 +170,9 @@ fun SearchScreen(
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                     Spacer(Modifier.height(12.dp))
-                    Text("正在从竞彩官网 & TheSportsDB 检索…", fontSize = 13.sp,
+                    Text("正在检索比赛、球队、球员…", fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-            }
-
-            error -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("网络请求失败，请检查网络后重试", fontSize = 14.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
 
             !hasSearched -> HotSuggestions(
@@ -164,18 +182,36 @@ fun SearchScreen(
             matches.isEmpty() && teams.isEmpty() && players.isEmpty() -> Box(
                 Modifier.fillMaxSize(), contentAlignment = Alignment.Center
             ) {
-                Text(
-                    "未找到与“${query.trim()}”相关的结果\n可尝试搜索英文球队名，如 Manchester、Liverpool",
-                    fontSize = 14.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    lineHeight = 22.sp
-                )
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        "未找到与“${query.trim()}”相关的结果",
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "提示：中文球队名搜索竞彩赛事（如 曼城）\n英文名搜索全球球队/球员（如 Manchester）",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        lineHeight = 18.sp
+                    )
+                    if (tdFailed) {
+                        Spacer(Modifier.height(14.dp))
+                        Text(
+                            "海外数据源（TheSportsDB）暂不可达，已为你展示竞彩赛事结果",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
             }
 
             else -> SearchResults(
                 matches = matches,
                 teams = teams,
                 players = players,
+                jcFailed = jcFailed,
+                tdFailed = tdFailed,
                 onMatchClick = { onShowToast("${it.home} vs ${it.away} · ${it.time}") },
                 onTeamClick = { onShowToast(it.name) },
                 onPlayerClick = { onShowToast(it.name) },
@@ -183,6 +219,20 @@ fun SearchScreen(
         }
     }
 }
+
+/** 本地模拟数据 → 远程比赛模型（竞彩接口失败时的降级数据源） */
+private fun MatchInfo.toRemote(): RemoteMatch = RemoteMatch(
+    matchId = id,
+    num = num,
+    league = league,
+    time = kickoff,
+    home = home,
+    away = away,
+    had = Triple(oddsW.toString(), oddsD.toString(), oddsL.toString()),
+    hhad = null,
+    goalLine = "",
+    status = status.name,
+)
 
 /* ---------- 热门搜索 ---------- */
 
@@ -235,6 +285,8 @@ private fun SearchResults(
     matches: List<RemoteMatch>,
     teams: List<SearchTeam>,
     players: List<SearchPlayer>,
+    jcFailed: Boolean,
+    tdFailed: Boolean,
     onMatchClick: (RemoteMatch) -> Unit,
     onTeamClick: (SearchTeam) -> Unit,
     onPlayerClick: (SearchPlayer) -> Unit,
@@ -243,25 +295,44 @@ private fun SearchResults(
         Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
+        if (jcFailed || tdFailed) {
+            item(key = "notice") {
+                val text = buildList {
+                    if (jcFailed) add("竞彩官方接口暂不可达，已展示本地模拟数据")
+                    if (tdFailed) add("海外数据源（TheSportsDB）暂不可达")
+                }.joinToString("；")
+                Text(
+                    text,
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 6.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f))
+                        .padding(10.dp),
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer
+                )
+            }
+        }
         if (matches.isNotEmpty()) {
-            item { SectionHeader("竞彩赛事", matches.size) }
-            items(matches, key = { "m_${it.matchId}" }) { m ->
+            item(key = "sec_m") { SectionHeader("竞彩赛事", matches.size) }
+            itemsIndexed(matches, key = { i, m -> "m_${m.matchId}_$i" }) { _, m ->
                 MatchResultCard(m, onClick = { onMatchClick(m) })
             }
         }
         if (teams.isNotEmpty()) {
-            item { SectionHeader("球队", teams.size) }
-            items(teams, key = { "t_${it.id}" }) { t ->
+            item(key = "sec_t") { SectionHeader("球队", teams.size) }
+            itemsIndexed(teams, key = { i, t -> "t_${t.id}_$i" }) { _, t ->
                 TeamResultCard(t, onClick = { onTeamClick(t) })
             }
         }
         if (players.isNotEmpty()) {
-            item { SectionHeader("球员", players.size) }
-            items(players, key = { "p_${it.id}" }) { p ->
+            item(key = "sec_p") { SectionHeader("球员", players.size) }
+            itemsIndexed(players, key = { i, p -> "p_${p.id}_$i" }) { _, p ->
                 PlayerResultCard(p, onClick = { onPlayerClick(p) })
             }
         }
-        item { Spacer(Modifier.height(16.dp)) }
+        item(key = "bottom") { Spacer(Modifier.height(16.dp)) }
     }
 }
 

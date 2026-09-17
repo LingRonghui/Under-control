@@ -2,9 +2,13 @@ package com.jingcai.predict.data.remote
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
+import java.net.URLEncoder
+import java.util.concurrent.TimeUnit
 
 /** TheSportsDB 全球足球数据库搜索结果 */
 data class SearchTeam(
@@ -28,36 +32,34 @@ object TeamDbApi {
 
     private const val BASE = "https://www.thesportsdb.com/api/v1/json/3/"
 
-    /** 搜索球队 */
+    /** 独立短超时客户端：海外数据源失败时快速返回，避免长时间卡 loading */
+    private val client: OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(8, TimeUnit.SECONDS)
+        .readTimeout(8, TimeUnit.SECONDS)
+        .build()
+
+    /** 搜索球队，失败时抛出异常 */
     suspend fun searchTeams(query: String): List<SearchTeam> = withContext(Dispatchers.IO) {
-        try {
-            val url = BASE + "searchteams.php?t=" + java.net.URLEncoder.encode(query, "UTF-8")
-            val json = get(url) ?: return@withContext emptyList()
-            parseTeams(json)
-        } catch (e: Exception) {
-            emptyList()
-        }
+        val url = BASE + "searchteams.php?t=" + URLEncoder.encode(query, "UTF-8")
+        val json = get(url)
+        parseTeams(json)
     }
 
-    /** 搜索球员 */
+    /** 搜索球员，失败时抛出异常 */
     suspend fun searchPlayers(query: String): List<SearchPlayer> = withContext(Dispatchers.IO) {
-        try {
-            val url = BASE + "searchplayers.php?p=" + java.net.URLEncoder.encode(query, "UTF-8")
-            val json = get(url) ?: return@withContext emptyList()
-            parsePlayers(json)
-        } catch (e: Exception) {
-            emptyList()
-        }
+        val url = BASE + "searchplayers.php?p=" + URLEncoder.encode(query, "UTF-8")
+        val json = get(url)
+        parsePlayers(json)
     }
 
-    private fun get(url: String): String? {
+    private fun get(url: String): String {
         val request = Request.Builder()
             .url(url)
             .header("User-Agent", "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36")
             .build()
-        HttpClient.client.newCall(request).execute().use { resp ->
-            if (!resp.isSuccessful) return null
-            return resp.body?.string()
+        client.newCall(request).execute().use { resp ->
+            if (!resp.isSuccessful) throw IOException("TheSportsDB HTTP ${resp.code}")
+            return resp.body?.string() ?: throw IOException("TheSportsDB 响应为空")
         }
     }
 

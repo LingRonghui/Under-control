@@ -4,6 +4,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Request
 import org.json.JSONObject
+import java.io.IOException
 
 /**
  * 中国体育彩票 · 竞彩足球官方接口（webapi.sporttery.cn）
@@ -27,26 +28,43 @@ object JingCaiApi {
     private const val MATCH_URL =
         "https://webapi.sporttery.cn/gateway/jc/football/getMatchCalculatorV1.qry?clientCode=3001&channel=c"
 
-    /** 拉取近两日全部竞彩足球赛事（真实数据） */
+    /** 完整浏览器请求头，规避竞彩官网 WAF 反爬（UA 单独会命中拦截页） */
+    private fun buildRequest(): Request {
+        return Request.Builder()
+            .url(MATCH_URL)
+            .header("User-Agent", "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
+            .header("Referer", "https://www.sporttery.cn/")
+            .header("Accept", "application/json, text/plain, */*")
+            .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+            .header("Accept-Encoding", "identity")
+            .header("Connection", "keep-alive")
+            .header("Origin", "https://www.sporttery.cn")
+            .build()
+    }
+
+    /**
+     * 拉取近两日全部竞彩足球赛事（真实数据）。
+     * 失败时抛出异常，由调用方决定降级策略。
+     */
     suspend fun fetchMatches(): List<RemoteMatch> = withContext(Dispatchers.IO) {
-        try {
-            val request = Request.Builder()
-                .url(MATCH_URL)
-                .header("User-Agent", "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36")
-                .header("Referer", "https://www.sporttery.cn/")
-                .build()
-            HttpClient.client.newCall(request).execute().use { resp ->
-                if (!resp.isSuccessful) return@withContext emptyList()
-                val body = resp.body?.string() ?: return@withContext emptyList()
-                parse(body)
+        HttpClient.client.newCall(buildRequest()).execute().use { resp ->
+            if (!resp.isSuccessful) {
+                throw IOException("竞彩接口 HTTP ${resp.code}")
             }
-        } catch (e: Exception) {
-            emptyList()
+            val body = resp.body?.string() ?: throw IOException("竞彩接口响应为空")
+            // WAF 拦截时会返回 HTML 而非 JSON
+            if (!body.trimStart().startsWith("{")) {
+                throw IOException("竞彩接口返回异常内容（可能被反爬拦截）")
+            }
+            parse(body)
         }
     }
 
     private fun parse(json: String): List<RemoteMatch> {
         val root = JSONObject(json)
+        if (root.optString("errorCode") != "0") {
+            throw IOException("竞彩接口返回错误: ${root.optString("errorMessage")}")
+        }
         val value = root.optJSONObject("value") ?: return emptyList()
         val dayList = value.optJSONArray("matchInfoList") ?: return emptyList()
         val result = mutableListOf<RemoteMatch>()
@@ -69,8 +87,8 @@ object JingCaiApi {
             num = m.optString("matchNumStr", ""),
             league = m.optString("leagueAllName", m.optString("leagueAbbName", "")),
             time = m.optString("matchTime", ""),
-            home = m.optString("homeTeamAllName", ""),
-            away = m.optString("awayTeamAllName", ""),
+            home = m.optString("homeTeamAllName", m.optString("homeTeamAbbName", "")),
+            away = m.optString("awayTeamAllName", m.optString("awayTeamAbbName", "")),
             had = parseOdds(hadObj),
             hhad = parseOdds(hhadObj),
             goalLine = hhadObj?.optString("goalLine", "") ?: "",
