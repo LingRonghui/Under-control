@@ -28,6 +28,7 @@ import androidx.navigation.compose.rememberNavController
 import com.jingcai.predict.ui.screens.AnalysisScreen
 import com.jingcai.predict.ui.screens.MatchesScreen
 import com.jingcai.predict.ui.screens.MineScreen
+import com.jingcai.predict.ui.screens.SearchScreen
 
 @Composable
 fun AppRoot(
@@ -129,7 +130,13 @@ fun AppRoot(
                             toast("已收藏")
                         }
                     },
-                    onSearchClick = { toast("搜索功能开发中，敬请期待") }
+                    onSearchClick = { navController.navigate("search") }
+                )
+            }
+            composable("search") {
+                SearchScreen(
+                    onBack = { navController.popBackStack() },
+                    onShowToast = toast
                 )
             }
             composable("analysis") { AnalysisScreen() }
