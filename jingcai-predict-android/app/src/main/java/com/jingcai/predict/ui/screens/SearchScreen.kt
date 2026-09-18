@@ -387,8 +387,8 @@ private fun HotSuggestions(jcFailed: Boolean, onPick: (String) -> Unit) {
         Spacer(Modifier.height(20.dp))
         Text(
             buildString {
-                append("数据来源：中国体育彩票竞彩官网（联赛赛程赛果）\n输入时实时联想，支持中文搜索联赛")
-                if (jcFailed) append("\n当前无法连接官网数据，请下拉重试")
+                append("输入时实时联想，支持中文搜索联赛")
+                if (jcFailed) append("\n当前无法连接数据服务，请下拉重试")
             },
             fontSize = 11.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,

@@ -50,10 +50,11 @@ import com.jingcai.predict.data.MatchInfo
 import com.jingcai.predict.data.MatchStatus
 import com.jingcai.predict.data.remote.JingCaiApi
 import com.jingcai.predict.data.remote.LiveMatchBrief
-import com.jingcai.predict.data.remote.LiveScore
 import com.jingcai.predict.data.remote.MatchPreviewApi
 import com.jingcai.predict.data.remote.RemoteMatch
+import com.jingcai.predict.data.remote.ResultBrief
 import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 
@@ -66,76 +67,53 @@ fun MatchesScreen(
     onOpenMatch: (RemoteMatch) -> Unit,
 ) {
     var tab by remember { mutableStateOf(0) }
-    var todayList by remember { mutableStateOf<List<MatchInfo>>(emptyList()) }
-    var tomorrowList by remember { mutableStateOf<List<MatchInfo>>(emptyList()) }
-    var todayRemote by remember { mutableStateOf<List<RemoteMatch>>(emptyList()) }
-    var tomorrowRemote by remember { mutableStateOf<List<RemoteMatch>>(emptyList()) }
-    // 实时比分（进行中/已结束的补充比赛 + 比分预览）
-    var liveScores by remember { mutableStateOf<Map<String, LiveScore>>(emptyMap()) }
-    var liveMatchByLeague by remember { mutableStateOf<Map<String, List<MatchInfo>>>(emptyMap()) }
-    var liveRemoteByLeague by remember { mutableStateOf<Map<String, List<RemoteMatch>>>(emptyMap()) }
+    // 三大分类：未开始 / 进行中 / 已结束（收藏 = 三类中命中 favIds 的并集）
+    var upcoming by remember { mutableStateOf<List<MatchInfo>>(emptyList()) }
+    var liveList by remember { mutableStateOf<List<MatchInfo>>(emptyList()) }
+    var finishedList by remember { mutableStateOf<List<MatchInfo>>(emptyList()) }
+    // 点击进入详情所需的原始数据；timeById 存完整开赛时间（"yyyy-MM-dd HH:mm:ss"）用于排序
+    var remoteById by remember { mutableStateOf<Map<String, RemoteMatch>>(emptyMap()) }
+    var timeById by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var loading by remember { mutableStateOf(true) }
     var refreshing by remember { mutableStateOf(false) }
     var failed by remember { mutableStateOf(false) }
 
     val scope = rememberCoroutineScope()
 
-    fun load(showRefresh: Boolean) {
-        if (showRefresh) refreshing = true else loading = true
-        failed = false
+    /** @param silent 静默刷新（自动刷新用：不显示加载态与下拉刷新圈） */
+    fun load(showRefresh: Boolean, silent: Boolean = false) {
+        if (!silent) {
+            if (showRefresh) refreshing = true else loading = true
+            failed = false
+        }
         scope.launch {
-            // 并行：竞彩售彩列表（官方 今日/明日） + 比分直播（已结束/进行中补充）
-            val live = async {
+            // 并行：竞彩在售列表（= 未开始） + 比分直播（= 进行中 / 已结束）
+            val daysDeferred = async { runCatching { JingCaiApi.fetchMatchDays() }.getOrNull() }
+            val liveDeferred = async {
                 runCatching { MatchPreviewApi.fetchLiveBriefs() }
                     .getOrDefault(Pair(emptyList<LiveMatchBrief>(), emptyMap()))
             }
-            try {
-                val days = JingCaiApi.fetchMatchDays()
-                val todayStr = LocalDate.now().toString()
-                val today = mutableListOf<MatchInfo>()
-                val tomorrow = mutableListOf<MatchInfo>()
-                val todayR = mutableListOf<RemoteMatch>()
-                val tomorrowR = mutableListOf<RemoteMatch>()
-                days.forEachIndexed { i, day ->
-                    val isToday = day.date.isNotEmpty() && day.date == todayStr
-                    if (isToday || (day.date.isEmpty() && i == 0 && today.isEmpty())) {
-                        today += day.matches.map { it.toMatchInfo() }
-                        todayR += day.matches
-                    } else {
-                        tomorrow += day.matches.map { it.toMatchInfo() }
-                        tomorrowR += day.matches
-                    }
-                }
-                todayList = today
-                tomorrowList = tomorrow
-                todayRemote = todayR
-                tomorrowRemote = tomorrowR
-            } catch (e: Exception) {
-                failed = true
-            } finally {
-                loading = false
-                refreshing = false
+            // 已结束：赛果列表（每页 10 场，翻页取够最近 30 场）
+            val resultDeferred = async {
+                runCatching { MatchPreviewApi.fetchResultList() }.getOrDefault(emptyList())
             }
+            val days = daysDeferred.await()
+            val (briefs, scores) = liveDeferred.await()
+            val resultList = resultDeferred.await()
+            if (days == null) failed = true
 
-            // 组装比分直播补充比赛：进行中/已结束补到"今日"tab，按联赛分组
-            val (briefs, scores) = live.await()
-            liveScores = scores
-            val targetDate = LocalDate.now().toString()
-            val byLeague = mutableMapOf<String, MutableList<MatchInfo>>()
-            val byLeagueRemote = mutableMapOf<String, MutableList<RemoteMatch>>()
+            val todayStr = LocalDate.now().toString()
+            val remoteMap = mutableMapOf<String, RemoteMatch>()
+            val timeMap = mutableMapOf<String, String>()
+            val live = mutableListOf<MatchInfo>()
+
+            // 1) 比分直播：进行中的比赛（只展示当天的）
             briefs.forEach { b ->
-                // 补充：不重复已存在的官方比赛；仅保留"今天"相关（进行中/已结束）
                 val score = scores[b.matchId] ?: return@forEach
-                if (!score.isLive && !score.isFinished) return@forEach
-                val date = b.matchDate
-                if (date.isNotEmpty() && date < targetDate) return@forEach
-                val lived = todayList.any { it.id == b.matchId }
-                if (lived) return@forEach
-                val st = when {
-                    score.isLive -> MatchStatus.LIVE
-                    else -> MatchStatus.FINISHED
-                }
-                val mi = MatchInfo(
+                if (!score.isLive) return@forEach
+                if (b.matchDate.isNotEmpty() && b.matchDate < todayStr) return@forEach
+                val fullTime = if (b.matchDate.isNotEmpty()) "${b.matchDate} ${b.matchTime}" else b.matchTime
+                live += MatchInfo(
                     id = b.matchId,
                     num = b.num,
                     league = b.league,
@@ -146,32 +124,82 @@ fun MatchesScreen(
                     homeColor = teamColor(b.home),
                     awayColor = teamColor(b.away),
                     oddsW = 0.0, oddsD = 0.0, oddsL = 0.0,
-                    status = st,
+                    status = MatchStatus.LIVE,
                     liveMinute = score.minute.toIntOrNull(),
                     score = score.score,
                     htScore = score.halfScore,
                 )
-                val rm = RemoteMatch(
+                remoteMap[b.matchId] = RemoteMatch(
                     matchId = b.matchId,
                     num = b.num,
                     league = b.league,
-                    time = if (b.matchDate.isNotEmpty()) b.matchDate + " " + b.matchTime else b.matchTime,
+                    time = fullTime,
                     home = b.home,
                     away = b.away,
-                    had = null, hhad = null, goalLine = "", status = st.name,
+                    had = null, hhad = null, goalLine = "",
+                    status = "LIVE",
                 )
-                byLeague.getOrPut(b.league) { mutableListOf() }.add(mi)
-                byLeagueRemote.getOrPut(b.league) { mutableListOf() }.add(rm)
+                timeMap[b.matchId] = fullTime
             }
-            liveMatchByLeague = byLeague
-            liveRemoteByLeague = byLeagueRemote
+
+            // 2) 竞彩官方在售列表 = 未开始（排除已在比分直播出现的场次，避免同一场重复）
+            val up = mutableListOf<MatchInfo>()
+            days?.forEach { day ->
+                day.matches.forEach { m ->
+                    if (remoteMap.containsKey(m.matchId)) return@forEach
+                    up += m.toMatchInfo()
+                    remoteMap[m.matchId] = m
+                    timeMap[m.matchId] = if (m.time.contains(' ')) m.time else "${day.date} ${m.time}"
+                }
+            }
+
+            // 3) 已结束：赛果按时间倒序取最近 30 场（新赛果出现后，最底部最早的一场自动被挤出）
+            val liveIds = live.map { it.id }.toSet()
+            val finished = resultList
+                .filter { it.matchId !in liveIds }   // 正在直播的场次不属于已结束
+                .distinctBy { it.matchId }
+                .sortedWith(compareByDescending<ResultBrief> { it.matchDate }.thenByDescending { it.matchTime })
+                .take(30)
+            finished.forEach { f ->
+                val full = "${f.matchDate} ${f.matchTime}".trim()
+                remoteMap[f.matchId] = RemoteMatch(
+                    matchId = f.matchId,
+                    num = f.num,
+                    league = f.league,
+                    time = full,
+                    home = f.home,
+                    away = f.away,
+                    had = null, hhad = null, goalLine = "",
+                    status = "FINISHED",
+                )
+                timeMap[f.matchId] = full
+            }
+
+            upcoming = up
+            liveList = live
+            finishedList = finished.map { it.toMatchInfo() }
+            remoteById = remoteMap
+            timeById = timeMap
+            loading = false
+            refreshing = false
         }
     }
 
     LaunchedEffect(Unit) { load(false) }
 
-    // 今日列表 = 官方售彩（未开赛） + 比分直播补充（进行中/已结束）
-    val todayAll = todayList + liveMatchByLeague.values.flatten()
+    // 停留在「进行中」时，每 1 分钟静默刷新一次比分
+    LaunchedEffect(tab) {
+        if (tab != 1) return@LaunchedEffect
+        while (true) {
+            delay(60_000)
+            load(showRefresh = false, silent = true)
+        }
+    }
+
+    val todayStr = LocalDate.now().toString()
+    // 顶部角标：今日全部场次（未开始 + 进行中 + 今日已结束）
+    val todayCount = upcoming.count { (timeById[it.id] ?: "").startsWith(todayStr) } +
+        liveList.size + finishedList.count { (timeById[it.id] ?: "").startsWith(todayStr) }
 
     Column(Modifier.fillMaxSize()) {
         // 品牌栏
@@ -191,7 +219,7 @@ fun MatchesScreen(
                 Text("⚡", fontSize = 14.sp)
             }
             Text(
-                "竞彩足球预测",
+                "Under Control",
                 Modifier.padding(start = 8.dp),
                 fontSize = 17.sp,
                 fontWeight = FontWeight.Bold
@@ -211,7 +239,7 @@ fun MatchesScreen(
                         .background(MaterialTheme.colorScheme.primary)
                 )
                 Text(
-                    " 今日 ${todayAll.size} 场",
+                    " 今日 $todayCount 场",
                     fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -241,21 +269,17 @@ fun MatchesScreen(
                 modifier = Modifier.size(18.dp)
             )
             Text(
-                "搜索联赛 / 球队 / 球员 / 比赛",
+                "搜索联赛 / 比赛",
                 Modifier.padding(start = 8.dp),
                 fontSize = 14.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
 
-        // 日期 Tab
-        val tabs = listOf("今日", "明日", "收藏")
-        val favCount = (todayAll + tomorrowList).count { it.id in favIds }
-        val counts = listOf(
-            todayAll.size,
-            tomorrowList.size,
-            favCount
-        )
+        // 分类 Tab：未开始 / 进行中 / 已结束 / 收藏
+        val favAll = (upcoming + liveList + finishedList).filter { it.id in favIds }
+        val tabs = listOf("未开始", "进行中", "已结束", "收藏")
+        val counts = listOf(upcoming.size, liveList.size, finishedList.size, favAll.size)
         Row(
             Modifier
                 .fillMaxWidth()
@@ -289,7 +313,7 @@ fun MatchesScreen(
         }
 
         // 比赛列表：官方数据 + 下拉刷新
-        val noData = todayList.isEmpty() && tomorrowList.isEmpty()
+        val noData = upcoming.isEmpty() && liveList.isEmpty() && finishedList.isEmpty()
         when {
             loading && noData -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -302,7 +326,7 @@ fun MatchesScreen(
 
             failed && noData -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("竞彩官方数据加载失败", fontSize = 14.sp,
+                    Text("数据加载失败", fontSize = 14.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(6.dp))
                     Text("请检查网络后下拉重试", fontSize = 12.sp,
@@ -319,27 +343,13 @@ fun MatchesScreen(
                 onRefresh = { load(true) },
                 modifier = Modifier.fillMaxSize()
             ) {
-                val list = when (tab) {
-                    1 -> tomorrowList
-                    2 -> (todayList + tomorrowList + liveMatchByLeague.values.flatten())
-                        .filter { it.id in favIds }
-                    else -> (todayList + liveMatchByLeague.values.flatten())
-                        .sortedBy { statusRank(it) }
-                }
-                val remote = when (tab) {
-                    1 -> tomorrowRemote
-                    2 -> (todayRemote + tomorrowRemote + liveRemoteByLeague.values.flatten())
-                        .filter { it.matchId in favIds }
-                    else -> todayRemote + liveRemoteByLeague.values.flatten()
-                }
-                val grouped = list.groupBy { it.league }
                 LazyColumn(
                     Modifier
                         .fillMaxSize()
                         .padding(bottom = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    if (list.isEmpty()) {
+                    if (counts.getOrElse(tab) { 0 } == 0) {
                         item {
                             Box(
                                 Modifier
@@ -348,8 +358,12 @@ fun MatchesScreen(
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
-                                    if (tab == 2) "暂无收藏比赛\n点击比赛卡片旁的星标即可收藏"
-                                    else "今日暂无竞彩赛事",
+                                    when (tab) {
+                                        0 -> "暂无未开始的竞彩赛事"
+                                        1 -> "当前没有进行中的比赛"
+                                        2 -> "今日暂无已结束的比赛"
+                                        else -> "暂无收藏比赛\n点击比赛卡片旁的星标即可收藏"
+                                    },
                                     fontSize = 13.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     lineHeight = 22.sp,
@@ -358,46 +372,58 @@ fun MatchesScreen(
                             }
                         }
                     }
-                    grouped.forEach { (league, matches) ->
-                        item(key = "head_$league") {
-                            Row(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .padding(start = 14.dp, end = 14.dp, top = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Box(
-                                    Modifier
-                                        .size(7.dp)
-                                        .clip(CircleShape)
-                                        .background(MaterialTheme.colorScheme.primary)
-                                )
-                                Text(
-                                    " $league",
-                                    Modifier.padding(start = 4.dp),
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Spacer(Modifier.weight(1f))
-                                Text(
-                                    "${matches.size}场",
-                                    fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+
+                    if (tab == 0) {
+                        // 未开始：按开赛时间从早到晚排序（跨天按真实时间比较），并按日期分组
+                        val sorted = upcoming.sortedBy { timeById[it.id] ?: it.kickoff }
+                        val tomorrowStr = LocalDate.now().plusDays(1).toString()
+                        var lastDate: String? = null
+                        sorted.forEach { m ->
+                            val date = (timeById[m.id] ?: "").take(10)
+                            if (date != lastDate) {
+                                lastDate = date
+                                val n = sorted.count { (timeById[it.id] ?: "").take(10) == date }
+                                val title = when (date) {
+                                    todayStr -> "今天 · ${date.takeLast(5)}"
+                                    tomorrowStr -> "明天 · ${date.takeLast(5)}"
+                                    "" -> "近期"
+                                    else -> date
+                                }
+                                item(key = "d_$date") { GroupHeader(title, n) }
+                            }
+                            item(key = m.id) {
+                                MatchCard(
+                                    match = m,
+                                    faved = m.id in favIds,
+                                    showLeague = true,
+                                    onFav = { onToggleFav(m.id) },
+                                    onClick = { remoteById[m.id]?.let(onOpenMatch) }
                                 )
                             }
                         }
-                        items(matches.size, key = { matches[it].id }) { idx ->
-                            MatchCard(
-                                match = matches[idx],
-                                faved = matches[idx].id in favIds,
-                                onFav = { onToggleFav(matches[idx].id) },
-                                onClick = { remote.find { it.matchId == matches[idx].id }?.let(onOpenMatch) }
+                    } else {
+                        val list = when (tab) {
+                            1 -> liveList.sortedBy { timeById[it.id] ?: it.kickoff }
+                            2 -> finishedList.sortedByDescending { timeById[it.id] ?: it.kickoff }
+                            else -> favAll.sortedWith(
+                                compareBy({ statusRank(it) }, { timeById[it.id] ?: it.kickoff })
                             )
+                        }
+                        list.groupBy { it.league }.forEach { (league, matches) ->
+                            item(key = "h_$league") { GroupHeader(league, matches.size) }
+                            items(matches.size, key = { matches[it].id }) { idx ->
+                                MatchCard(
+                                    match = matches[idx],
+                                    faved = matches[idx].id in favIds,
+                                    onFav = { onToggleFav(matches[idx].id) },
+                                    onClick = { remoteById[matches[idx].id]?.let(onOpenMatch) }
+                                )
+                            }
                         }
                     }
                     item {
                         Text(
-                            "数据来源：中国体育彩票 · 竞彩足球官方数据\n下拉可刷新",
+                            "下拉可刷新",
                             Modifier
                                 .fillMaxWidth()
                                 .padding(top = 18.dp),
@@ -410,6 +436,36 @@ fun MatchesScreen(
                 }
             }
         }
+    }
+}
+
+/** 分组标题：未开始按日期分组，其余按联赛分组 */
+@Composable
+private fun GroupHeader(title: String, count: Int) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(start = 14.dp, end = 14.dp, top = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            Modifier
+                .size(7.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary)
+        )
+        Text(
+            " $title",
+            Modifier.padding(start = 4.dp),
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(Modifier.weight(1f))
+        Text(
+            "${count}场",
+            fontSize = 11.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
@@ -451,12 +507,31 @@ private fun RemoteMatch.toMatchInfo(): MatchInfo {
     )
 }
 
+/** 赛果列表条目 → 界面比赛模型 */
+private fun ResultBrief.toMatchInfo(): MatchInfo = MatchInfo(
+    id = matchId,
+    num = num,
+    league = league,
+    round = "",
+    kickoff = matchTime,
+    home = home,
+    away = away,
+    homeColor = teamColor(home),
+    awayColor = teamColor(away),
+    oddsW = 0.0, oddsD = 0.0, oddsL = 0.0,
+    status = MatchStatus.FINISHED,
+    liveMinute = null,
+    score = score,
+    htScore = htScore,
+)
+
 @Composable
 private fun MatchCard(
     match: MatchInfo,
     faved: Boolean,
     onFav: () -> Unit,
     onClick: () -> Unit,
+    showLeague: Boolean = false,
 ) {
     Row(
         Modifier
@@ -485,6 +560,16 @@ private fun MatchCard(
         val scoreParts = if (match.status != MatchStatus.UPCOMING && match.score != null)
             match.score!!.split(":", limit = 2) else null
         Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
+            // 按日期分组的列表没有联赛表头，联赛名放在卡片内
+            if (showLeague) {
+                Text(
+                    match.league,
+                    Modifier.padding(bottom = 3.dp),
+                    fontSize = 9.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1
+                )
+            }
             TeamLine(
                 match.home, match.homeColor,
                 scoreParts?.getOrNull(0), isAway = false,

@@ -3,8 +3,12 @@ package com.jingcai.predict.data.remote
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Request
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
+
+/** 某玩法的可售方式（官方 poolList）：single = 支持单关，allUp = 支持过关 */
+data class PoolFlag(val single: Boolean, val allUp: Boolean)
 
 /**
  * 中国体育彩票 · 竞彩足球官方接口（webapi.sporttery.cn）
@@ -26,7 +30,14 @@ data class RemoteMatch(
     val ttg: Map<String, String>? = null,   // 总进球数：s0~s7 → 赔率
     val homeRank: String = "",              // 主队联赛排名
     val awayRank: String = "",              // 客队联赛排名
-)
+    val poolFlags: Map<String, PoolFlag> = emptyMap(),  // 各玩法单关/过关可售标记
+) {
+    /** 该玩法本场是否支持单关（官方未标记则视为不支持） */
+    fun singleAllowed(play: String): Boolean = poolFlags[play]?.single == true
+
+    /** 该玩法本场是否支持过关（官方未标记则视为支持） */
+    fun allUpAllowed(play: String): Boolean = poolFlags[play]?.allUp != false
+}
 
 /** 竞彩某一日期的赛事集合 */
 data class MatchDay(
@@ -92,7 +103,13 @@ object JingCaiApi {
                 val m = subs.optJSONObject(j) ?: continue
                 matches.add(parseMatch(m))
             }
-            result.add(MatchDay(day.optString("matchDate", ""), matches))
+            result.add(
+                MatchDay(
+                    // 官方日期字段为 businessDate（部分响应不再返回 matchDate），需兜底
+                    date = day.optString("matchDate", "").ifEmpty { day.optString("businessDate", "") },
+                    matches = matches,
+                )
+            )
         }
         return result
     }
@@ -104,7 +121,10 @@ object JingCaiApi {
             matchId = m.optString("matchId", ""),
             num = m.optString("matchNumStr", ""),
             league = m.optString("leagueAllName", m.optString("leagueAbbName", "")),
-            time = m.optString("matchTime", ""),
+            // 官方把日期与时间拆为 matchDate / matchTime 两个字段，这里组装成完整开赛时间 "yyyy-MM-dd HH:mm:ss"
+            time = listOf(m.optString("matchDate", ""), m.optString("matchTime", ""))
+                .filter { it.isNotEmpty() }
+                .joinToString(" "),
             home = m.optString("homeTeamAllName", m.optString("homeTeamAbbName", "")),
             away = m.optString("awayTeamAllName", m.optString("awayTeamAbbName", "")),
             had = parseOdds(hadObj),
@@ -116,7 +136,24 @@ object JingCaiApi {
             ttg = parseOddsMap(m.optJSONObject("ttg")),
             homeRank = m.optString("homeRank", ""),
             awayRank = m.optString("awayRank", ""),
+            poolFlags = parsePoolFlags(m.optJSONArray("poolList")),
         )
+    }
+
+    /** 各玩法的单关/过关可售标记（官方 poolList，bettingSingle=1 可单关、bettingAllup=1 可过关） */
+    private fun parsePoolFlags(arr: JSONArray?): Map<String, PoolFlag> {
+        if (arr == null) return emptyMap()
+        val out = mutableMapOf<String, PoolFlag>()
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            val code = o.optString("poolCode", "")
+            if (code.isEmpty()) continue
+            out[code] = PoolFlag(
+                single = o.optInt("bettingSingle", 0) == 1,
+                allUp = o.optInt("bettingAllup", 0) == 1,
+            )
+        }
+        return out
     }
 
     private fun parseOdds(obj: JSONObject?): Triple<String, String, String>? {

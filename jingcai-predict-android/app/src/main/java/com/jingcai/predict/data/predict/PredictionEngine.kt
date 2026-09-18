@@ -203,6 +203,7 @@ object PredictionEngine {
             signalNote = signalNote,
             key = key,
             homeOdds = oddsH, drawOdds = oddsD, awayOdds = oddsA,
+            lambdaHome = lh, lambdaAway = la,
         )
     }
 

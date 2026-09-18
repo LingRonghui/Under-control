@@ -30,4 +30,6 @@ data class PredictionResult(
     val homeOdds: Double,           // 原始主胜赔率（0 表示缺失）
     val drawOdds: Double,
     val awayOdds: Double,
+    val lambdaHome: Double = 0.0,   // 主队期望进球 λ（双泊松输入，供选项概率复算；0 表示统计信号缺失）
+    val lambdaAway: Double = 0.0,   // 客队期望进球 λ
 )

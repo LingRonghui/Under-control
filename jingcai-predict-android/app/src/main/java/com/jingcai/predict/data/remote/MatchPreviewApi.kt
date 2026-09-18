@@ -117,6 +117,19 @@ data class LiveMatchBrief(
     val statusName: String,
 )
 
+/** 赛果列表单场（getMatchDataPageListV1，method=result） */
+data class ResultBrief(
+    val matchId: String,
+    val num: String,
+    val league: String,
+    val home: String,
+    val away: String,
+    val matchDate: String,   // yyyy-MM-dd
+    val matchTime: String,   // HH:mm
+    val score: String,       // 全场比分 "2:1"
+    val htScore: String,     // 半场比分
+)
+
 /** 实时比分事件（进球/红牌等） */
 data class LiveEvent(
     val minute: String,      // 事件发生分钟
@@ -138,7 +151,8 @@ data class LiveScore(
     val events: List<LiveEvent>,
 ) {
     val isLive: Boolean get() = status == "4" || status == "5"
-    val isFinished: Boolean get() = status == "6"
+    // 官方比赛状态 11 = 已完赛（当前接口实际取值），6 为历史取值，一并兼容
+    val isFinished: Boolean get() = status == "6" || status == "11"
 }
 
 /* ================= 赔率（zqdz 详情页 getFixedBonusV1 同源） ================= */
@@ -374,6 +388,54 @@ object MatchPreviewApi {
             )
         }
     }
+
+    /**
+     * 赛果列表（getMatchDataPageListV1，method=result），每页 10 场、按时间倒序。
+     * 该接口是唯一带「队名 + 联赛 + 编号 + 比分」的已完赛数据源，用于「已结束」分类。
+     * 注意：官方列表会把「正在直播」的场次也列进来（比分为空），这里按「无比分不算赛果」过滤。
+     * @param want 需要的赛果场次 @param maxPages 最多翻页数（每页 10 场）
+     */
+    suspend fun fetchResultList(want: Int = 30, maxPages: Int = 5): List<ResultBrief> =
+        withContext(Dispatchers.IO) {
+            val referer = "https://www.sporttery.cn/jc/zqbfzb/"
+            val out = mutableListOf<ResultBrief>()
+            for (p in 1..maxPages) {
+                if (out.size >= want) break
+                val resp = HttpClient.client.newCall(
+                    buildRequest(BASE_LIVE + "getMatchDataPageListV1.qry?method=result&pageNo=$p", "", referer)
+                ).execute()
+                val list = handleValue(resp) { v ->
+                    val res = mutableListOf<ResultBrief>()
+                    val dayArr = v.optJSONArray("matchInfoList")
+                    if (dayArr != null) {
+                        for (d in 0 until dayArr.length()) {
+                            val day = dayArr.optJSONObject(d) ?: continue
+                            val sub = day.optJSONArray("subMatchList") ?: continue
+                            for (s in 0 until sub.length()) {
+                                val m = sub.optJSONObject(s) ?: continue
+                                res.add(
+                                    ResultBrief(
+                                        matchId = m.optLong("matchId").toString(),
+                                        num = m.optString("matchNumStr", ""),
+                                        league = m.optString("leagueAllName", m.optString("leagueAbbName", "")),
+                                        home = m.optString("homeTeamAllName", m.optString("homeTeamAbbName", "")),
+                                        away = m.optString("awayTeamAllName", m.optString("awayTeamAbbName", "")),
+                                        matchDate = m.optString("matchDate", "").take(10),
+                                        matchTime = m.optString("matchTime", "").take(5),
+                                        score = m.optString("sectionsNo999", ""),
+                                        htScore = m.optString("sectionsNo1", ""),
+                                    )
+                                )
+                            }
+                        }
+                    }
+                    res.filter { it.score.isNotBlank() }   // 无比分 = 尚未完赛，不属于赛果
+                }
+                if (list.isEmpty()) break
+                out += list
+            }
+            out
+        }
 
     /** 拉取 value 字段并交给 parse 处理 */
     private inline fun <T> handleValue(resp: okhttp3.Response, parse: (JSONObject) -> T): T {

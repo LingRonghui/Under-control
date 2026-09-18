@@ -18,10 +18,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.outlined.ReceiptLong
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material.icons.outlined.Shield
+import androidx.compose.material.icons.outlined.SmartToy
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -43,6 +45,8 @@ fun MineScreen(
     darkTheme: Boolean,
     onThemeChange: (Boolean) -> Unit,
     onShowToast: (String) -> Unit,
+    onOpenSlips: () -> Unit,
+    onOpenLlmConfig: () -> Unit,
 ) {
     Column(
         Modifier
@@ -121,6 +125,24 @@ fun MineScreen(
                 title = "我的收藏",
                 sub = "查看收藏的比赛",
                 onClick = { onShowToast("功能完善中，敬请期待") }
+            ) {
+                Chevron()
+            }
+            Divider()
+            SettingRow(
+                icon = Icons.AutoMirrored.Outlined.ReceiptLong,
+                title = "方案中心",
+                sub = "已保存的方案与命中情况",
+                onClick = { onOpenSlips() }
+            ) {
+                Chevron()
+            }
+            Divider()
+            SettingRow(
+                icon = Icons.Outlined.SmartToy,
+                title = "模型配置",
+                sub = "接入大模型，增强预测分析解读",
+                onClick = { onOpenLlmConfig() }
             ) {
                 Chevron()
             }

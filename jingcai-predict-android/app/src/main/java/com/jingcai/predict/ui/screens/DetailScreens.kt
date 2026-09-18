@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -21,18 +22,22 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -68,18 +73,35 @@ import com.jingcai.predict.data.remote.RecentTeam
 import com.jingcai.predict.data.remote.RemoteMatch
 import com.jingcai.predict.data.predict.LeagueProfile
 import com.jingcai.predict.data.predict.LeagueProfiles
-import com.jingcai.predict.data.predict.OddsMath
-import com.jingcai.predict.data.predict.PredictionEngine
-import com.jingcai.predict.data.predict.PredictionResult
+import com.jingcai.predict.data.llm.AiPredictionStore
+import com.jingcai.predict.data.llm.CombinedPick
+import com.jingcai.predict.data.llm.CombinedPrediction
+import com.jingcai.predict.data.llm.CombineRule
+import com.jingcai.predict.data.llm.LlmConfig
+import com.jingcai.predict.data.llm.LlmConfigStore
+import com.jingcai.predict.data.llm.PredictionBatchRunner
+import com.jingcai.predict.data.llm.SlipPlayCodes
+import com.jingcai.predict.data.llm.ValueRule
 import com.jingcai.predict.data.predict.ProfileRepository
 import com.jingcai.predict.data.predict.SignalWeights
 import com.jingcai.predict.data.remote.SearchPlayer
 import com.jingcai.predict.data.remote.SearchTeam
 import com.jingcai.predict.data.remote.TableRow
 import com.jingcai.predict.data.remote.TeamTables
-import kotlinx.coroutines.async
+import com.jingcai.predict.data.slip.ParlayMath
+import com.jingcai.predict.data.slip.SavedSlip
+import com.jingcai.predict.data.slip.SlipCalc
+import com.jingcai.predict.data.slip.SlipHolder
+import com.jingcai.predict.data.slip.SlipLeg
+import com.jingcai.predict.data.slip.SlipPlay
+import com.jingcai.predict.data.slip.SlipSelection
+import com.jingcai.predict.data.slip.SlipStatus
+import com.jingcai.predict.data.slip.SlipStore
+import com.jingcai.predict.ui.components.UiMessage
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -120,13 +142,6 @@ fun TeamDetailScreen(onBack: () -> Unit) {
             )
         )
         Spacer(Modifier.height(20.dp))
-        Text(
-            "数据来源：TheSportsDB",
-            fontSize = 11.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.fillMaxWidth(),
-            textAlign = TextAlign.Center
-        )
     }
 }
 
@@ -157,13 +172,6 @@ fun PlayerDetailScreen(onBack: () -> Unit) {
             )
         )
         Spacer(Modifier.height(20.dp))
-        Text(
-            "数据来源：TheSportsDB",
-            fontSize = 11.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.fillMaxWidth(),
-            textAlign = TextAlign.Center
-        )
     }
 }
 
@@ -394,7 +402,7 @@ private fun MatchStatusCard(match: RemoteMatch) {
                 isFinished && live != null ->
                     phase?.takeIf { it.isNotBlank() } ?: "比赛已结束，赛果已锁定"
                 isFinished -> "比赛已结束，赛果已锁定"
-                else -> "开赛时间：${match.time}"
+                else -> "开赛时间：${kickoffText(match.time)}"
             },
             fontSize = 12.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -474,11 +482,16 @@ private data class PreviewData(
 
 @Composable
 private fun ForwardTab(match: RemoteMatch) {
+    val context = LocalContext.current
     var preview by remember { mutableStateOf<PreviewData?>(null) }
     var failed by remember { mutableStateOf(false) }
+    // 赛前情报：优先展示已缓存的模型情报，无则退回本地赔率简析（不发起任何网络请求）
+    var aiBrief by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(match.matchId) {
         preview = runCatching { buildPreview(match) }.getOrNull()
         failed = preview == null
+        AiPredictionStore.loadOnce(context)
+        aiBrief = AiPredictionStore.get(match.matchId)?.preview?.takeIf { it.isNotBlank() }
     }
 
     Column(
@@ -544,22 +557,22 @@ private fun ForwardTab(match: RemoteMatch) {
         InjuryCard(p.awayInjuries, awayName)
         Spacer(Modifier.height(16.dp))
 
-        // 赛前情报
+        // 赛前情报（模型情报优先，无则本地简析并标注）
         SectionTitle("赛前情报")
         Text(
-            preMatchBrief(match),
+            aiBrief ?: preMatchBrief(match),
             fontSize = 13.sp,
             lineHeight = 21.sp,
             color = MaterialTheme.colorScheme.onSurface
         )
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "数据来源：中国体育彩票竞彩官网 · 赛事前瞻",
-            Modifier.fillMaxWidth(),
-            fontSize = 11.sp,
-            textAlign = TextAlign.Center,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        if (aiBrief == null) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "（情报未生成）",
+                fontSize = 10.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
         Spacer(Modifier.height(20.dp))
     }
 }
@@ -949,11 +962,33 @@ private fun preMatchBrief(match: RemoteMatch): String {
 
 /* ---------- 赔率 Tab ---------- */
 
+/**
+ * 一个可点选的赔率选项：玩法代码 + 官方选项键 + 展示标签 + 赔率单元格。
+ * 官方选项键原样保留（比分玩法即官方 map 的原始 key，如 s01s01 / s-1sh），
+ * 直接作为 SlipSelection.optionCode，不做二次改写。
+ */
+private data class OddsOption(
+    val play: String,
+    val code: String,
+    val label: String,
+    val cell: OddsCell,
+) {
+    /** 本场内的唯一键（与 SlipSelection 的 玩法|选项键 对应） */
+    val key: String get() = "$play|$code"
+
+    /** 可投注赔率：为空或不大于 1 视为不可选 */
+    val odds: Double? get() = cell.value.toDoubleOrNull()?.takeIf { it > 1.0 }
+}
+
 @Composable
 private fun OddsTab(match: RemoteMatch) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     // 最新赔率（zqdz 详情页同源，取最后一条时间线），失败时降级到静态售彩赔率
     var odds by remember { mutableStateOf<MatchOdds?>(null) }
     var loading by remember { mutableStateOf(true) }
+    // 方案计算器弹层开关
+    var sheetOpen by remember { mutableStateOf(false) }
     LaunchedEffect(match.matchId) {
         runCatching { MatchPreviewApi.fetchOdds(match.matchId) }
             .onSuccess { odds = it }
@@ -977,86 +1012,184 @@ private fun OddsTab(match: RemoteMatch) {
     val ttg: Map<String, OddsCell> =
         o?.ttg?.takeIf { it.isNotEmpty() } ?: match.ttg?.mapValues { OddsCell(it.value, 0) } ?: emptyMap()
 
-    Column(
-        Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 14.dp, vertical = 12.dp)
-    ) {
-        if (loading) {
-            Box(Modifier.fillMaxWidth().padding(vertical = 48.dp), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
+    // 本场已选选项键（玩法|选项键；读取可观察方案单，选中变化即刷新选中态）
+    val mySelected = SlipHolder.selections
+        .filter { it.matchId == match.matchId }
+        .map { "${it.play}|${it.optionCode}" }
+
+    // 点选 / 取消一个赔率选项，并立即落盘
+    fun toggleOption(opt: OddsOption) {
+        val v = opt.odds ?: return
+        SlipHolder.toggle(
+            SlipSelection(
+                matchId = match.matchId,
+                matchNum = match.num,
+                league = match.league,
+                home = match.home,
+                away = match.away,
+                kickoff = kickoffText(match.time),
+                play = opt.play,
+                playLabel = SlipPlay.of(opt.play)?.label ?: opt.play,
+                optionCode = opt.code,
+                optionLabel = opt.label,
+                odds = v,
+                // 仅让球胜平负带盘口
+                goalLine = if (opt.play == SlipPlay.HHAD.code) goalLine else "",
+                singleAllowed = match.singleAllowed(opt.play),
+            )
+        )
+        scope.launch { SlipStore.saveCurrent(context, SlipHolder.snapshot()) }
+    }
+
+    // 底部方案栏数据（注数 / 金额）
+    val brief = slipBrief()
+
+    Box(Modifier.fillMaxSize()) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 14.dp, vertical = 12.dp)
+                // 底部留出方案栏高度，避免遮挡最后一块赔率
+                .padding(bottom = if (brief != null) 76.dp else 0.dp)
+        ) {
+            if (loading) {
+                Box(Modifier.fillMaxWidth().padding(vertical = 48.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+                return@Column
             }
-            return@Column
+
+            // 1. 胜平负
+            SectionTitle("胜平负")
+            if (had != null) {
+                TripleOddsCard(
+                    listOf(
+                        OddsOption(SlipPlay.HAD.code, "h", "胜", had.first),
+                        OddsOption(SlipPlay.HAD.code, "d", "平", had.second),
+                        OddsOption(SlipPlay.HAD.code, "a", "负", had.third),
+                    ),
+                    selected = mySelected,
+                    onToggle = ::toggleOption,
+                )
+            } else EmptyHint("本场未开售")
+            Spacer(Modifier.height(16.dp))
+
+            // 2. 让球胜平负
+            SectionTitle("让球胜平负${goalLine}")
+            if (hhad != null) {
+                TripleOddsCard(
+                    listOf(
+                        OddsOption(SlipPlay.HHAD.code, "h", "让球胜", hhad.first),
+                        OddsOption(SlipPlay.HHAD.code, "d", "让球平", hhad.second),
+                        OddsOption(SlipPlay.HHAD.code, "a", "让球负", hhad.third),
+                    ),
+                    selected = mySelected,
+                    onToggle = ::toggleOption,
+                )
+            } else EmptyHint("本场未开售")
+            Spacer(Modifier.height(16.dp))
+
+            // 3. 全场比分
+            SectionTitle("全场比分")
+            if (crs.isEmpty()) EmptyHint("本场比分玩法未开售")
+            else OddsGrid(crsList(crs), columns = 4, selected = mySelected, onToggle = ::toggleOption)
+            Spacer(Modifier.height(16.dp))
+
+            // 4. 半全场胜平负
+            SectionTitle("半全场胜平负")
+            if (hafu.isEmpty()) EmptyHint("本场半全场玩法未开售")
+            else OddsGrid(hafuList(hafu), columns = 3, selected = mySelected, onToggle = ::toggleOption)
+            Spacer(Modifier.height(16.dp))
+
+            // 5. 总进球数
+            SectionTitle("总进球数")
+            if (ttg.isEmpty()) EmptyHint("本场总进球玩法未开售")
+            else OddsGrid(ttgList(ttg), columns = 4, selected = mySelected, onToggle = ::toggleOption)
+            Spacer(Modifier.height(20.dp))
         }
 
-        // 1. 胜平负
-        SectionTitle("胜平负")
-        if (had != null) TripleOddsCard(listOf("胜" to had.first, "平" to had.second, "负" to had.third))
-        else EmptyHint("本场未开售")
-        Spacer(Modifier.height(16.dp))
+        // 底部方案栏：固定不随内容滚动
+        if (brief != null) {
+            SchemeBar(
+                matchCount = brief.matchCount,
+                calc = brief.calc,
+                onClear = {
+                    SlipHolder.clear()
+                    scope.launch { SlipStore.saveCurrent(context, SlipHolder.snapshot()) }
+                },
+                onOpen = { sheetOpen = true },
+                modifier = Modifier.align(Alignment.BottomCenter),
+            )
+        }
+    }
 
-        // 2. 让球胜平负
-        SectionTitle("让球胜平负${goalLine}")
-        if (hhad != null) TripleOddsCard(listOf("让球胜" to hhad.first, "让球平" to hhad.second, "让球负" to hhad.third))
-        else EmptyHint("本场未开售")
-        Spacer(Modifier.height(16.dp))
-
-        // 3. 全场比分
-        SectionTitle("全场比分")
-        if (crs.isEmpty()) EmptyHint("本场比分玩法未开售")
-        else OddsGrid(crsList(crs), columns = 4)
-        Spacer(Modifier.height(16.dp))
-
-        // 4. 半全场胜平负
-        SectionTitle("半全场胜平负")
-        if (hafu.isEmpty()) EmptyHint("本场半全场玩法未开售")
-        else OddsGrid(hafuList(hafu), columns = 3)
-        Spacer(Modifier.height(16.dp))
-
-        // 5. 总进球数
-        SectionTitle("总进球数")
-        if (ttg.isEmpty()) EmptyHint("本场总进球玩法未开售")
-        else OddsGrid(ttgList(ttg), columns = 4)
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "数据来源：中国体育彩票 · 竞彩足球官方数据（最新更新赔率）",
-            Modifier.fillMaxWidth(),
-            fontSize = 11.sp,
-            textAlign = TextAlign.Center,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(Modifier.height(20.dp))
+    if (sheetOpen && brief != null) {
+        SlipCalculatorSheet(onDismiss = { sheetOpen = false })
     }
 }
 
-/** 全场比分选项解析：遍历官方返回的全部赔率（s{H}s{A} → H:A），胜/平/负其他放末尾 */
-private fun crsList(crs: Map<String, OddsCell>): List<Pair<String, OddsCell>> {
-    val out = mutableListOf<Pair<String, OddsCell>>()
+/** 方案栏/计算器公用：按比赛分组后的注数与金额计算结果 */
+private data class SlipBrief(
+    val matchCount: Int,
+    val calc: SlipCalc,
+    /** 实际生效的关次集合（已过滤非法关次） */
+    val useParlay: List<Int>,
+)
+
+/**
+ * 汇总当前方案单：每场已选赔率列表 → ParlayMath.calc。
+ * 未选任何选项返回 null；未手动指定过关方式时按场次数推荐（≥2 场用 N串1，否则单关）。
+ */
+private fun slipBrief(): SlipBrief? {
+    val optionOdds = SlipHolder.selections.groupBy { it.matchId }.values
+        .map { legs -> legs.map { it.odds } }
+    if (optionOdds.isEmpty()) return null
+    val want = SlipHolder.parlay.ifEmpty { listOf(optionOdds.size.coerceAtLeast(1)) }
+    val calc = ParlayMath.calc(
+        optionOdds = optionOdds,
+        playCodes = SlipHolder.selections.map { it.play },
+        parlay = want,
+        multiple = SlipHolder.multiple,
+        singleAllowed = SlipHolder.singleAllowed(),
+    )
+    // 与 ParlayMath.calc 内部的过滤规则保持一致
+    val useParlay = want.filter { it in calc.validParlay }.ifEmpty { calc.validParlay.takeLast(1) }
+    return SlipBrief(optionOdds.size, calc, useParlay)
+}
+
+/** 全场比分选项解析：遍历官方返回的全部赔率（s{H}s{A} → H:A），胜/平/负其他放末尾；选项键用官方原始 key */
+private fun crsList(crs: Map<String, OddsCell>): List<OddsOption> {
+    val out = mutableListOf<OddsOption>()
     val rx = Regex("s(\\d+)s(\\d+)")
     // 普通比分按 (主队 H, 客队 A) 数值升序
     crs.filterKeys { rx.containsMatchIn(it) }
         .map { e ->
             val m = rx.find(e.key)!!
-            Triple(m.groupValues[1].toInt(), m.groupValues[2].toInt(), e.value)
+            Triple(m.groupValues[1].toInt(), m.groupValues[2].toInt(), e)
         }
         .sortedWith(compareBy({ it.first }, { it.second }))
-        .forEach { (h, a, v) -> out += "$h:$a" to v }
+        .forEach { (h, a, e) -> out += OddsOption(SlipPlay.CRS.code, e.key, "$h:$a", e.value) }
     // 官方"其他"键实际为 s-1sh / s-1sd / s-1sa（兼容 s1sh 等写法）
     val otherRx = Regex("^s-?\\d+s([hda])$")
     crs.forEach { (k, v) ->
         val m = otherRx.find(k) ?: return@forEach
-        out += when (m.groupValues[1]) {
-            "h" -> "胜其他"
-            "d" -> "平其他"
-            else -> "负其他"
-        } to v
+        out += OddsOption(
+            SlipPlay.CRS.code,
+            k,
+            when (m.groupValues[1]) {
+                "h" -> "胜其他"
+                "d" -> "平其他"
+                else -> "负其他"
+            },
+            v,
+        )
     }
     return out
 }
 
-/** 半全场选项解析（标签为竞彩官方写法） */
-private fun hafuList(hafu: Map<String, OddsCell>): List<Pair<String, OddsCell>> {
+/** 半全场选项解析（标签为竞彩官方写法，选项键 hh/hd/ha/dh/dd/da/ah/ad/aa） */
+private fun hafuList(hafu: Map<String, OddsCell>): List<OddsOption> {
     val labels = mapOf(
         "hh" to "胜胜", "hd" to "胜平", "ha" to "胜负",
         "dh" to "平胜", "dd" to "平平", "da" to "平负",
@@ -1064,33 +1197,37 @@ private fun hafuList(hafu: Map<String, OddsCell>): List<Pair<String, OddsCell>> 
     )
     return labels.mapNotNull { (k, label) ->
         val v = hafu[k] ?: return@mapNotNull null
-        label to v
+        OddsOption(SlipPlay.HAFU.code, k, label, v)
     }
 }
 
-/** 总进球解析：s0~s7 → 0球…7球+ */
-private fun ttgList(ttg: Map<String, OddsCell>): List<Pair<String, OddsCell>> {
+/** 总进球解析：s0~s7 → 0球…7球+（选项键为官方 s0~s7） */
+private fun ttgList(ttg: Map<String, OddsCell>): List<OddsOption> {
     return (0..7).mapNotNull { i ->
         val v = ttg["s$i"] ?: return@mapNotNull null
-        (if (i == 7) "7球+" else "${i}球") to v
+        OddsOption(SlipPlay.TTG.code, "s$i", if (i == 7) "7球+" else "${i}球", v)
     }
 }
 
 /* ---------- 预测分析 Tab ---------- */
 
 /**
- * 预测分析：基于竞彩官方真实数据的三路信号融合深度预测 + 联赛参数配置面板。
- * 并行拉取 前瞻特征/积分榜/近况/交锋/赔率 5 个官方接口 → predictDeep 融合计算；
- * 联赛参数可展开调整（保存在本机 DataStore，立即重算），默认值来自 2025/26 真实统计。
+ * 预测分析：直接读取本地缓存中的「综合结论」（模型为核心 + 架构为基础的整体结论）。
+ * - 进入页面只读缓存，**绝不重新预测**（不发起任何模型调用）；
+ * - 无缓存且比赛未开赛时才生成一次，生成结果落盘，之后进入本页直接读取；
+ * - 只有「模型复核」会强制重算该场（reviewCount + 1）。
+ * 另附联赛参数配置面板（保存参数后可用「模型复核」按新参数重算）。
  */
 @Composable
 private fun PredictionTab(match: RemoteMatch) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var prediction by remember { mutableStateOf<PredictionResult?>(null) }
-    var oddsData by remember { mutableStateOf<MatchOdds?>(null) }
+    var snapshot by remember { mutableStateOf<CombinedPrediction?>(null) }
+    var building by remember { mutableStateOf(false) }
+    var buildError by remember { mutableStateOf<String?>(null) }
+    var cfg by remember { mutableStateOf<LlmConfig?>(null) }
+    var tick by remember { mutableIntStateOf(0) }   // 复核后触发重读
     var profile by remember { mutableStateOf<LeagueProfile?>(null) }
-    var loading by remember { mutableStateOf(true) }
     var configOpen by remember { mutableStateOf(false) }
 
     // 参数编辑态（进入页面时从当前生效模板初始化）
@@ -1107,39 +1244,52 @@ private fun PredictionTab(match: RemoteMatch) {
         editWm = p.weights.market; editWp = p.weights.poisson; editWs = p.weights.stat
     }
 
-    fun recompute(p: LeagueProfile) {
-        scope.launch {
-            loading = true
-            val r = runCatching {
-                // 5 个官方接口并行拉取，任一失败仅降级该信号，不阻塞整体
-                val feature = async { runCatching { MatchPreviewApi.fetchFeature(match.matchId) }.getOrNull() }
-                val tables = async { runCatching { MatchPreviewApi.fetchTables(match.matchId) }.getOrNull() }
-                val results = async { runCatching { MatchPreviewApi.fetchResults(match.matchId) }.getOrNull() }
-                val history = async { runCatching { MatchPreviewApi.fetchHistory(match.matchId) }.getOrNull() }
-                val odds = async { runCatching { MatchPreviewApi.fetchOdds(match.matchId) }.getOrNull() }
-                val o = odds.await()
-                val res = PredictionEngine.predictDeep(
-                    match, p,
-                    feature.await(), tables.await(), results.await(), history.await(), o,
-                )
-                o to res
-            }
-            r.onSuccess { (o, res) ->
-                oddsData = o
-                prediction = res
-            }.onFailure {
-                // 深度接口整体失败时保底：用列表自带赔率做轻量预测
-                prediction = prediction ?: runCatching { PredictionEngine.predictLight(match, p) }.getOrNull()
-            }
-            loading = false
+    LaunchedEffect(match.matchId, tick) {
+        AiPredictionStore.loadOnce(context)
+        cfg = LlmConfigStore.load(context)
+        val cached = AiPredictionStore.get(match.matchId)
+        if (cached != null) {
+            snapshot = cached
+            buildError = null
+            return@LaunchedEffect
         }
+        // 已开赛/已结束：不再预测
+        val s = match.status.uppercase()
+        if (s == "1" || s == "LIVE" || s == "OPEN" || s == "2" || s == "CLOSED" || s == "FINISHED") {
+            snapshot = null
+            buildError = "本场${if (s == "1" || s == "LIVE" || s == "OPEN") "已经开始" else "已经结束"}，未在赛前保留预测"
+            return@LaunchedEffect
+        }
+        building = true
+        buildError = null
+        PredictionBatchRunner.ensure(context, match)
+            .onSuccess { snapshot = it }
+            .onFailure { buildError = it.message ?: "预测生成失败" }
+        building = false
     }
 
+    // 联赛参数（配置面板展示与保存用，不参与预测计算）
     LaunchedEffect(match.matchId) {
         val p = ProfileRepository.getProfile(context, match.league)
         profile = p
         syncEdits(p)
-        recompute(p)
+    }
+
+    fun review() {
+        scope.launch {
+            building = true
+            buildError = null
+            PredictionBatchRunner.reviewWithDetail(context, match)
+                .onSuccess {
+                    snapshot = it.prediction
+                    tick += 1
+                    UiMessage.success("复核完成（第${it.prediction.reviewCount}次）")
+                }
+                .onFailure { e ->
+                    UiMessage.error(e.message ?: "复核失败")
+                }
+            building = false
+        }
     }
 
     Column(
@@ -1148,70 +1298,153 @@ private fun PredictionTab(match: RemoteMatch) {
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 14.dp, vertical = 12.dp)
     ) {
+        // 「预测目标」标题行 + 「模型复核」按钮
+        Row(
+            Modifier.fillMaxWidth().padding(bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "预测目标",
+                Modifier.weight(1f),
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
+            )
+            OutlinedButton(
+                onClick = { review() },
+                enabled = !building,
+                shape = RoundedCornerShape(10.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+            ) {
+                if (building) {
+                    CircularProgressIndicator(
+                        Modifier.size(13.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text("复核中…", fontSize = 12.sp)
+                } else {
+                    Text("模型复核", fontSize = 12.sp)
+                }
+            }
+        }
+
+        val cp = snapshot
         when {
-            loading && prediction == null -> Box(
-                Modifier.fillMaxWidth().padding(vertical = 80.dp),
+            cp != null -> {
+                cp.picks.forEachIndexed { i, pick ->
+                    if (i > 0) Spacer(Modifier.height(8.dp))
+                    CombinedPickRow(pick)
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    CombineRule.NOTE,
+                    fontSize = 10.sp,
+                    lineHeight = 15.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(20.dp))
+
+                // 实时建议：最具价值 / 最稳健（数字全部本地可复算，模型仅作解读）
+                SectionTitle("实时建议")
+                val bankroll = cfg?.bankroll ?: 100.0
+                if (cp.bestValue == null && cp.safest == null) {
+                    EmptyHint("统计信号缺失，不具备给出建议的数据基础")
+                } else {
+                    cp.bestValue?.let {
+                        AdviceCard("最具价值", it, bankroll)
+                        if (cp.safest != null) Spacer(Modifier.height(8.dp))
+                    }
+                    cp.safest?.let { AdviceCard("最稳健", it, bankroll) }
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "${ValueRule.NOTE}；最稳健不设门槛，取架构概率最高者。期望值 = 架构概率 × 官方真实赔率 − 1（>0 才有盈利空间）；建议投入按凯利公式（全凯利）计算，实盘通常再取 1/4~1/2 折扣。均为概率与赔率的数学结果，不构成投注建议。",
+                        fontSize = 10.sp,
+                        lineHeight = 15.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Spacer(Modifier.height(20.dp))
+
+                // 思路分析（分节，全部来自综合结论快照；快照无分节时用快照数据兜底，不整块消失）
+                SectionTitle("思路分析")
+                val sections = cp.sections
+                if (sections.isEmpty()) {
+                    AnalysisSection("结论", fallbackConclusion(cp))
+                } else {
+                    sections.forEachIndexed { i, (title, content) ->
+                        if (i > 0) Spacer(Modifier.height(8.dp))
+                        AnalysisSection(title, content)
+                    }
+                }
+                Spacer(Modifier.height(20.dp))
+
+                // 状态行（无条件渲染）
+                Text(
+                    if (cp.model.isNotBlank())
+                        "综合置信度由 ${cp.model} 与本地架构整体运算得出；概率、赔率取官方真实数据（可复算），理由为主观评估"
+                    else "未配置大模型，以上为架构（本地引擎）结果",
+                    fontSize = 10.sp,
+                    lineHeight = 15.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                buildError?.let {
+                    Spacer(Modifier.height(3.dp))
+                    Text(it, fontSize = 10.sp, lineHeight = 15.sp, color = MaterialTheme.colorScheme.error)
+                }
+                // 模型侧未出结果时如实提示（超时 / 不可用），不静默降级
+                modelSideNote(cp, cfg)?.let {
+                    Spacer(Modifier.height(3.dp))
+                    Text(it, fontSize = 10.sp, lineHeight = 15.sp, color = MaterialTheme.colorScheme.error)
+                }
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    "生成 ${stampText(cp.updatedAt)} · 复核 ${cp.reviewCount} 次",
+                    fontSize = 10.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(16.dp))
+            }
+
+            building -> Box(
+                Modifier.fillMaxWidth().padding(vertical = 60.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                     Spacer(Modifier.height(10.dp))
                     Text(
-                        "正在并行拉取官方前瞻数据…",
+                        "正在生成综合预测…（首次生成，之后进入本页将直接读取结果）",
                         fontSize = 12.sp,
+                        lineHeight = 18.sp,
+                        textAlign = TextAlign.Center,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
 
-            prediction == null -> Box(
+            else -> Box(
                 Modifier.fillMaxWidth().padding(vertical = 60.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("预测数据加载失败", fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.height(6.dp))
-                    Text("请检查网络后重试", fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.height(14.dp))
-                    Button(onClick = { profile?.let(::recompute) }, shape = RoundedCornerShape(10.dp)) {
-                        Text("重试", fontSize = 13.sp)
+                    Text(
+                        "暂无综合预测",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    buildError?.let {
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            it,
+                            fontSize = 11.sp,
+                            lineHeight = 17.sp,
+                            textAlign = TextAlign.Center,
+                            color = MaterialTheme.colorScheme.error
+                        )
                     }
                 }
-            }
-
-            else -> {
-                val p = prediction!!
-                val market = marketWdl(match, oddsData)
-
-                SectionTitle("预测目标")
-                PredictionRow("胜平负", labelOdds(p.wdlPick, wdlOdds(match, oddsData)))
-                Spacer(Modifier.height(8.dp))
-                PredictionRow("让球胜平负${p.hdpLine.ifEmpty { match.goalLine }}", labelOdds(p.hdpPick, hhadOdds(match, oddsData)))
-                Spacer(Modifier.height(8.dp))
-                PredictionRow("总比分", pickOdds(p.scorePick, crsByLabel(crsOdds(match, oddsData))))
-                Spacer(Modifier.height(8.dp))
-                PredictionRow("半全场胜平负", pickOdds(p.hfPick, hafuByLabel(hafuOdds(match, oddsData))))
-                Spacer(Modifier.height(8.dp))
-                PredictionRow("总进球数", pickOdds(p.totalPick, ttgByLabel(ttgOdds(match, oddsData))))
-                Spacer(Modifier.height(20.dp))
-
-                SectionTitle("思路分析")
-                if (market != null) {
-                    val marketPick = listOf("主胜", "平局", "客胜")[argmaxOf(market)]
-                    if (marketPick != p.wdlPick) {
-                        DivergenceHint(p, marketPick, market)
-                        Spacer(Modifier.height(8.dp))
-                    }
-                }
-                Text(
-                    analysisText(match, p, market),
-                    fontSize = 13.sp,
-                    lineHeight = 21.sp,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Spacer(Modifier.height(16.dp))
             }
         }
 
@@ -1235,7 +1468,7 @@ private fun PredictionTab(match: RemoteMatch) {
                     scope.launch {
                         ProfileRepository.saveProfile(context, match.league, edited)
                         profile = edited
-                        recompute(edited)
+                        UiMessage.info("参数已保存，点击「模型复核」按新参数重算")
                     }
                 },
                 onReset = {
@@ -1244,7 +1477,7 @@ private fun PredictionTab(match: RemoteMatch) {
                         val base = LeagueProfiles.forLeague(match.league)
                         profile = base
                         syncEdits(base)
-                        recompute(base)
+                        UiMessage.info("已恢复联赛默认参数，点击「模型复核」重算")
                     }
                 },
             )
@@ -1252,7 +1485,7 @@ private fun PredictionTab(match: RemoteMatch) {
 
         Spacer(Modifier.height(8.dp))
         Text(
-            "预测由竞彩官方真实数据（赔率 / 统计 / 交锋）融合计算，仅供参考，不构成投注建议。",
+            "预测结果仅供参考，不构成投注建议。",
             Modifier.fillMaxWidth(),
             fontSize = 11.sp,
             textAlign = TextAlign.Center,
@@ -1260,146 +1493,6 @@ private fun PredictionTab(match: RemoteMatch) {
         )
         Spacer(Modifier.height(20.dp))
     }
-}
-
-/* ---------- 预测项：官方赔率映射 ---------- */
-
-/** 半全场标签（竞彩官方写法）→ 官方赔率键 */
-private val hafuKeys = mapOf(
-    "胜胜" to "hh", "胜平" to "hd", "胜负" to "ha",
-    "平胜" to "dh", "平平" to "dd", "平负" to "da",
-    "负胜" to "ah", "负平" to "ad", "负负" to "aa",
-)
-
-private fun wdlOdds(match: RemoteMatch, odds: MatchOdds?): Triple<String, String, String>? =
-    odds?.had?.let { Triple(it.first.value, it.second.value, it.third.value) } ?: match.had
-
-private fun hhadOdds(match: RemoteMatch, odds: MatchOdds?): Triple<String, String, String>? =
-    odds?.hhad?.let { Triple(it.first.value, it.second.value, it.third.value) } ?: match.hhad
-
-private fun crsOdds(match: RemoteMatch, odds: MatchOdds?): Map<String, String>? =
-    odds?.crs?.mapValues { it.value.value }?.takeIf { it.isNotEmpty() } ?: match.crs
-
-private fun hafuOdds(match: RemoteMatch, odds: MatchOdds?): Map<String, String>? =
-    odds?.hafu?.mapValues { it.value.value }?.takeIf { it.isNotEmpty() } ?: match.hafu
-
-private fun ttgOdds(match: RemoteMatch, odds: MatchOdds?): Map<String, String>? =
-    odds?.ttg?.mapValues { it.value.value }?.takeIf { it.isNotEmpty() } ?: match.ttg
-
-/** 胜平负 / 让球：预测项 → (标签, 该项官方赔率)；赔率缺失时只显示预测 */
-private fun labelOdds(label: String, wdl: Triple<String, String, String>?): Pair<String, String>? {
-    if (label == "--") return null
-    val v = when (label) {
-        "主胜", "让胜" -> wdl?.first
-        "平局", "让平" -> wdl?.second
-        "客胜", "让负" -> wdl?.third
-        else -> null
-    }
-    return label to v.orEmpty()
-}
-
-/** 官方比分赔率键 → 展示标签（"0:1" / "胜其他" 等），兼容官方两种键写法 */
-private fun crsByLabel(map: Map<String, String>?): Map<String, String> {
-    if (map == null) return emptyMap()
-    // 官方比分键为两位零填充（s00s01 = 0:1）；"其他"键实际为 s-1sh / s-1sd / s-1sa（兼容 s1sh 等写法）
-    val pairRx = Regex("^s(\\d+)s(\\d+)$")
-    val otherRx = Regex("^s-?\\d+s([hda])$")
-    val out = mutableMapOf<String, String>()
-    map.forEach { (k, v) ->
-        pairRx.find(k)?.let { m ->
-            val h = m.groupValues[1].toIntOrNull()
-            val a = m.groupValues[2].toIntOrNull()
-            if (h != null && a != null) out["$h:$a"] = v
-        }
-        otherRx.find(k)?.let { m ->
-            out[when (m.groupValues[1]) {
-                "h" -> "胜其他"
-                "d" -> "平其他"
-                else -> "负其他"
-            }] = v
-        }
-    }
-    return out
-}
-
-private fun hafuByLabel(map: Map<String, String>?): Map<String, String> {
-    if (map == null) return emptyMap()
-    return hafuKeys.entries.mapNotNull { (label, code) -> map[code]?.let { label to it } }.toMap()
-}
-
-private fun ttgByLabel(map: Map<String, String>?): Map<String, String> {
-    if (map == null) return emptyMap()
-    return (0..7).mapNotNull { k ->
-        map["s$k"]?.let { (if (k == 7) "7球+" else "${k}球") to it }
-    }.toMap()
-}
-
-/** 预测项 + 对应官方赔率（按标签查表）；预测缺失返回 null，赔率缺失只显示预测项 */
-private fun pickOdds(label: String, map: Map<String, String>): Pair<String, String>? =
-    if (label == "--") null else label to (map[label] ?: "")
-
-/** 官方赔率隐含的胜平负概率（比例去水）；不可用返回 null */
-private fun marketWdl(match: RemoteMatch, odds: MatchOdds?): Triple<Double, Double, Double>? {
-    val t = wdlOdds(match, odds) ?: return null
-    val p = OddsMath.impliedWdl(
-        t.first.toDoubleOrNull() ?: 0.0,
-        t.second.toDoubleOrNull() ?: 0.0,
-        t.third.toDoubleOrNull() ?: 0.0,
-    )
-    return if (p.first + p.second + p.third > 0.0) p else null
-}
-
-private fun argmaxOf(t: Triple<Double, Double, Double>): Int {
-    val l = listOf(t.first, t.second, t.third)
-    return l.indices.maxByOrNull { l[it] } ?: 0
-}
-
-/* ---------- 预测文案 ---------- */
-
-/** 模型结论与市场赔率方向相反时的显式提示（如实告知，不隐瞒风险） */
-@Composable
-private fun DivergenceHint(p: PredictionResult, marketPick: String, market: Triple<Double, Double, Double>) {
-    val idx = listOf("主胜", "平局", "客胜").indexOf(marketPick).coerceAtLeast(0)
-    val marketP = listOf(market.first, market.second, market.third)[idx]
-    val modelP = when (p.wdlPick) {
-        "主胜" -> p.homeProb
-        "平局" -> p.drawProb
-        else -> p.awayProb
-    }
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(MaterialTheme.colorScheme.tertiaryContainer)
-            .padding(horizontal = 10.dp, vertical = 8.dp)
-    ) {
-        Text(
-            "⚠ 与市场分歧：官方赔率更看好$marketPick（隐含 ${pctOf(marketP)}），模型倾向 ${p.wdlPick}（${pctOf(modelP)}），属逆向判断，请谨慎参考。",
-            fontSize = 11.sp,
-            lineHeight = 17.sp,
-            color = MaterialTheme.colorScheme.onTertiaryContainer
-        )
-    }
-}
-
-private fun analysisText(
-    match: RemoteMatch,
-    p: PredictionResult,
-    market: Triple<Double, Double, Double>?,
-): String {
-    val sb = StringBuilder()
-    sb.append("模型融合「${p.signalNote}」信号后倾向 ${p.wdlPick}（主胜 ${pctOf(p.homeProb)} / 平 ${pctOf(p.drawProb)} / 客胜 ${pctOf(p.awayProb)}），置信度 ${p.conf}，数据完整度 ${pctOf(p.dataComplete)}。")
-    if (p.hdpPick != "--") {
-        sb.append("让球盘口 ${p.hdpLine.ifEmpty { match.goalLine }} 下倾向 ${p.hdpPick}；")
-    }
-    if (p.scorePick != "--") {
-        sb.append("泊松比分矩阵显示最可能比分 ${p.scorePick}、总进球 ${p.totalPick}，半全场倾向 ${p.hfPick}；")
-    }
-    market?.let {
-        sb.append("官方赔率隐含概率为 主胜 ${pctOf(it.first)} / 平 ${pctOf(it.second)} / 客胜 ${pctOf(it.third)}。")
-    }
-    if (p.key.isNotBlank()) sb.append("\n\n依据：${p.key}")
-    return sb.toString()
 }
 
 /* ---------- 联赛参数配置面板 ---------- */
@@ -1468,13 +1561,6 @@ private fun LeagueConfigPanel(
                 StepRow("权重·官方", fmt2(editWs),
                     { onWs((editWs - 0.05).coerceIn(0.0, 1.0)) },
                     { onWs((editWs + 0.05).coerceIn(0.0, 1.0)) })
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "参数来源：${base.sourceNote}",
-                    fontSize = 10.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    lineHeight = 15.sp
-                )
                 Spacer(Modifier.height(10.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = onReset, Modifier.weight(1f), shape = RoundedCornerShape(10.dp)) {
@@ -1519,6 +1605,26 @@ private fun pctOf(v: Double): String = "${(v * 100).roundToInt()}%"
 private fun fmt2(v: Double): String = String.format(Locale.US, "%.2f", v)
 private fun fmt3(v: Double): String = String.format(Locale.US, "%.3f", v)
 
+/** 时间戳 → "MM-dd HH:mm"（生成时间展示用） */
+private fun stampText(ms: Long): String =
+    if (ms <= 0L) "--" else SimpleDateFormat("MM-dd HH:mm", Locale.US).format(Date(ms))
+
+/**
+ * 模型侧失败原因的如实提示（状态行附近展示，不静默降级）：
+ * 已配置可用模型（[LlmConfig.ready]）却没有模型产出时，说明该场模型部分未成功；
+ * 只陈述可核实的事实（快照里没有模型名/没有赛前情报）与可能原因，不臆造具体错误信息。
+ */
+private fun modelSideNote(cp: CombinedPrediction, cfg: LlmConfig?): String? {
+    if (cfg?.ready != true) return null
+    if (cp.model.isBlank()) {
+        return "本场未取得模型结果（模型响应超时 / 不可用，或本场无可用真实赔率），以上为架构（本地引擎）结果"
+    }
+    if (cp.preview.isBlank()) {
+        return "本场赛前情报未生成（模型响应超时或未返回），其余结论仍为模型与架构整体运算结果"
+    }
+    return null
+}
+
 /* ---------- 通用小组件 ---------- */
 
 @Composable
@@ -1548,9 +1654,14 @@ private fun EmptyHint(text: String) {
     )
 }
 
+/** 胜平负 / 让球胜平负：三个可点选选项同处一张卡片 */
 @Composable
-private fun TripleOddsCard(items: List<Pair<String, OddsCell>>) {
-    if (items.isEmpty()) {
+private fun TripleOddsCard(
+    options: List<OddsOption>,
+    selected: List<String>,
+    onToggle: (OddsOption) -> Unit,
+) {
+    if (options.isEmpty()) {
         EmptyHint("本场未开售")
         return
     }
@@ -1560,27 +1671,61 @@ private fun TripleOddsCard(items: List<Pair<String, OddsCell>>) {
             .clip(RoundedCornerShape(14.dp))
             .background(MaterialTheme.colorScheme.surface)
             .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), RoundedCornerShape(14.dp))
-            .padding(vertical = 14.dp),
+            .padding(vertical = 10.dp),
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        items.forEach { (label, c) ->
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(label, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.height(5.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(c.value, fontSize = 17.sp, fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary)
-                    Spacer(Modifier.width(3.dp))
-                    TrendArrow(c)
+        options.forEach { opt ->
+            val isOn = opt.key in selected
+            Box(
+                Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(
+                        if (isOn) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f) else Color.Transparent
+                    )
+                    .border(
+                        1.dp,
+                        // 未选中保持原有卡片外观（透明边框仅用于避免选中后尺寸跳动）
+                        if (isOn) MaterialTheme.colorScheme.primary else Color.Transparent,
+                        RoundedCornerShape(10.dp)
+                    )
+                    .clickable(enabled = opt.odds != null) { onToggle(opt) }
+                    .padding(horizontal = 14.dp, vertical = 7.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        opt.label,
+                        fontSize = 12.sp,
+                        color = if (isOn) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(5.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            opt.cell.value,
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(Modifier.width(3.dp))
+                        TrendArrow(opt.cell)
+                    }
                 }
+                if (isOn) CheckBadge(Modifier.align(Alignment.TopStart))
             }
         }
     }
 }
 
+/** 网格玩法（比分 / 半全场 / 总进球）：每个赔率方块均为可点选选项 */
 @Composable
-private fun OddsGrid(items: List<Pair<String, OddsCell>>, columns: Int) {
+private fun OddsGrid(
+    items: List<OddsOption>,
+    columns: Int,
+    selected: List<String>,
+    onToggle: (OddsOption) -> Unit,
+) {
     items.chunked(columns).forEach { rowItems ->
         Row(
             Modifier
@@ -1588,30 +1733,448 @@ private fun OddsGrid(items: List<Pair<String, OddsCell>>, columns: Int) {
                 .padding(bottom = 6.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            rowItems.forEach { (label, c) ->
-                Column(
-                    Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(MaterialTheme.colorScheme.surface)
-                        .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f), RoundedCornerShape(10.dp))
-                        .padding(vertical = 9.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(label, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.height(3.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(c.value, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface)
-                        Spacer(Modifier.width(2.dp))
-                        TrendArrow(c)
-                    }
-                }
+            rowItems.forEach { opt ->
+                OddsGridCell(
+                    opt = opt,
+                    isOn = opt.key in selected,
+                    modifier = Modifier.weight(1f),
+                    onToggle = onToggle,
+                )
             }
             repeat(columns - rowItems.size) {
                 Spacer(Modifier.weight(1f))
             }
         }
+    }
+}
+
+@Composable
+private fun OddsGridCell(
+    opt: OddsOption,
+    isOn: Boolean,
+    modifier: Modifier,
+    onToggle: (OddsOption) -> Unit,
+) {
+    Box(
+        modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(
+                if (isOn) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
+                else MaterialTheme.colorScheme.surface
+            )
+            .border(
+                1.dp,
+                if (isOn) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.outline.copy(alpha = 0.25f),
+                RoundedCornerShape(10.dp)
+            )
+            .clickable(enabled = opt.odds != null) { onToggle(opt) }
+            .padding(vertical = 9.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                opt.label,
+                fontSize = 11.sp,
+                color = if (isOn) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(3.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    opt.cell.value,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (isOn) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(Modifier.width(2.dp))
+                TrendArrow(opt.cell)
+            }
+        }
+        if (isOn) CheckBadge(Modifier.align(Alignment.TopStart))
+    }
+}
+
+/** 选中角标（左上角 ✓） */
+@Composable
+private fun CheckBadge(modifier: Modifier = Modifier) {
+    Text(
+        "✓",
+        modifier,
+        fontSize = 10.sp,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.primary
+    )
+}
+
+/* ---------- 方案栏 / 方案计算器 ---------- */
+
+/** 底部方案栏：固定在赔率页底部，展示场次/注数/金额并进入计算器 */
+@Composable
+private fun SchemeBar(
+    matchCount: Int,
+    calc: SlipCalc,
+    onClear: () -> Unit,
+    onOpen: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(start = 14.dp, end = 10.dp, top = 8.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            if (calc.noteCount == 0L) "已选 $matchCount 场 · 未成单（官方未开单关，请再选 1 场）"
+            else "已选 $matchCount 场 · ${calc.noteCount} 注 · ${ParlayMath.money(calc.stake)} 元",
+            Modifier.weight(1f),
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        IconButton(onClick = onClear, Modifier.size(36.dp)) {
+            Icon(
+                Icons.Outlined.Delete,
+                contentDescription = "清空方案",
+                Modifier.size(18.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Button(
+            onClick = onOpen,
+            shape = RoundedCornerShape(10.dp),
+            contentPadding = PaddingValues(horizontal = 18.dp, vertical = 8.dp)
+        ) {
+            Text("查看方案", fontSize = 13.sp)
+        }
+    }
+}
+
+/**
+ * 方案计算器弹层：已选选项按比赛分组增删、过关方式（自由过关 / M串N 套餐）、
+ * 倍数、注数金额与奖金区间实时计算，并提供保存到方案中心与清空。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SlipCalculatorSheet(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    // 读取可观察方案单，增删选项后弹层内容即时刷新
+    val selections = SlipHolder.selections.toList()
+    val brief = slipBrief()
+    val maxK = SlipHolder.maxParlay()
+    val singleOk = SlipHolder.singleAllowed()
+    val parlay = SlipHolder.parlay
+    // 场次数：同一场比赛多选只算一场（串关必须跨场）
+    val matchCount = selections.map { it.matchId }.distinct().size
+
+    // 关次上限同时受「官方最大过关数」与「已选场次数」约束
+    val kMax = maxK.coerceAtMost(matchCount.coerceAtLeast(1))
+
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(max = 560.dp)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 14.dp)
+                .padding(bottom = 16.dp)
+        ) {
+            Text("方案计算器", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(10.dp))
+
+            /* ---- 已选列表（按比赛分组） ---- */
+            selections.groupBy { it.matchId }.values.forEach { legs ->
+                val head = legs.first()
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "${head.matchNum} · ${head.league} · ${head.home} vs ${head.away}",
+                        Modifier.weight(1f),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        head.kickoff,
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                legs.forEach { sel ->
+                    Row(
+                        Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "${sel.playLabel} ${sel.optionLabel}" +
+                                if (sel.goalLine.isNotEmpty()) "（${sel.goalLine}）" else "",
+                            Modifier.weight(1f),
+                            fontSize = 12.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            String.format(Locale.US, "%.2f", sel.odds),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        IconButton(
+                            onClick = {
+                                SlipHolder.remove(sel)
+                                scope.launch { SlipStore.saveCurrent(context, SlipHolder.snapshot()) }
+                                // 已选清空则关闭弹层
+                                if (SlipHolder.selections.isEmpty()) onDismiss()
+                            },
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(
+                                Icons.Outlined.Delete,
+                                contentDescription = "删除",
+                                Modifier.size(15.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 6.dp)
+                        .height(0.5.dp)
+                        .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
+                )
+            }
+
+            /* ---- 过关方式 ---- */
+            SectionTitle("过关方式")
+            Text("自由过关", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(6.dp))
+            if (!singleOk) {
+                Text(
+                    "本场所选玩法官方未开单关",
+                    fontSize = 10.sp,
+                    color = MaterialTheme.colorScheme.error
+                )
+                Spacer(Modifier.height(6.dp))
+            }
+            (1..kMax).toList().chunked(6).forEach { rowKs ->
+                Row(
+                    Modifier.fillMaxWidth().padding(bottom = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    rowKs.forEach { k ->
+                        ParlayChip(
+                            label = if (k == 1) "单关" else "${k}串1",
+                            selected = k in parlay,
+                            enabled = k != 1 || singleOk,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            SlipHolder.parlay = if (k in parlay) parlay - k else (parlay + k).sorted()
+                        }
+                    }
+                    repeat(6 - rowKs.size) { Spacer(Modifier.weight(1f)) }
+                }
+            }
+
+            // M串N 容错套餐（需要至少 2 场，套餐名与注数按官方注数分配表）
+            if (matchCount >= 2) {
+                Spacer(Modifier.height(2.dp))
+                Text("M串N 套餐", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(6.dp))
+                ParlayMath.presets(matchCount).chunked(3).forEach { rowPresets ->
+                    Row(
+                        Modifier.fillMaxWidth().padding(bottom = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        rowPresets.forEach { (name, keys) ->
+                            ParlayChip(
+                                label = name,
+                                selected = parlay.sorted() == keys.sorted(),
+                                enabled = keys.all { it <= kMax } && (singleOk || 1 !in keys),
+                                modifier = Modifier.weight(1f)
+                            ) { SlipHolder.parlay = keys }
+                        }
+                        repeat(3 - rowPresets.size) { Spacer(Modifier.weight(1f)) }
+                    }
+                }
+            }
+
+            /* ---- 倍数 ---- */
+            Spacer(Modifier.height(4.dp))
+            SectionTitle("倍数")
+            StepRow(
+                "投注倍数",
+                "${SlipHolder.multiple}",
+                { SlipHolder.multiple = (SlipHolder.multiple - 1).coerceIn(1, 99) },
+                { SlipHolder.multiple = (SlipHolder.multiple + 1).coerceIn(1, 99) },
+            )
+
+            /* ---- 计算结果 ---- */
+            Spacer(Modifier.height(6.dp))
+            SectionTitle("计算结果")
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.07f))
+                    .border(
+                        1.dp,
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                        RoundedCornerShape(12.dp)
+                    )
+                    .padding(horizontal = 12.dp, vertical = 10.dp)
+            ) {
+                val c = brief?.calc
+                CalcRow("过关方式", ParlayMath.parlayText(brief?.useParlay ?: emptyList()))
+                CalcRow("注数", "${c?.noteCount ?: 0L} 注")
+                CalcRow("金额", "${ParlayMath.money(c?.stake ?: 0.0)} 元（注数 × 2 × 倍数）")
+                CalcRow(
+                    "单注奖金",
+                    "${ParlayMath.money(c?.minNotePrize ?: 0.0)} ~ ${ParlayMath.money(c?.maxNotePrize ?: 0.0)} 元"
+                )
+                CalcRow("全部命中合计", "${ParlayMath.money(c?.totalIfAllHit ?: 0.0)} 元")
+                if ((c?.capPerNote ?: 0.0) > 0) {
+                    Text(
+                        "单注最高奖金限额 ${ParlayMath.money(c!!.capPerNote)} 元",
+                        Modifier.padding(top = 3.dp),
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                if (c?.estimated == true) {
+                    Text(
+                        "注数过多，奖金为理论值",
+                        Modifier.padding(top = 3.dp),
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                if (c?.overStakeLimit == true) {
+                    Text(
+                        "超过单张彩票 20000 元限额，请减少注数或倍数",
+                        Modifier.padding(top = 4.dp),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+
+            /* ---- 操作 ---- */
+            Spacer(Modifier.height(14.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = {
+                        SlipHolder.clear()
+                        scope.launch { SlipStore.saveCurrent(context, SlipHolder.snapshot()) }
+                        onDismiss()
+                    },
+                    Modifier.weight(1f),
+                    shape = RoundedCornerShape(10.dp)
+                ) { Text("清空", fontSize = 13.sp) }
+                Button(
+                    onClick = {
+                        val b = slipBrief()
+                        if (b != null) {
+                            val now = System.currentTimeMillis()
+                            val saved = SavedSlip(
+                                id = now.toString(),
+                                createdAt = now,
+                                legs = SlipHolder.selections.map { s ->
+                                    SlipLeg(
+                                        matchId = s.matchId,
+                                        matchNum = s.matchNum,
+                                        league = s.league,
+                                        home = s.home,
+                                        away = s.away,
+                                        play = s.play,
+                                        playLabel = s.playLabel,
+                                        optionCode = s.optionCode,
+                                        optionLabel = s.optionLabel,
+                                        odds = s.odds,
+                                        goalLine = s.goalLine,
+                                        hit = null,
+                                    )
+                                },
+                                parlay = b.useParlay,
+                                multiple = SlipHolder.multiple,
+                                stake = b.calc.stake,
+                                noteCount = b.calc.noteCount,
+                                maxPrize = b.calc.totalIfAllHit,
+                                status = SlipStatus.PENDING,
+                            )
+                            scope.launch {
+                                val list = SlipStore.loadSaved(context)
+                                SlipStore.saveSaved(context, listOf(saved) + list)
+                                SlipHolder.clear()
+                                SlipStore.saveCurrent(context, SlipHolder.snapshot())
+                                onDismiss()
+                                UiMessage.success("方案已保存到 我的-方案中心")
+                            }
+                        }
+                    },
+                    Modifier.weight(1f),
+                    shape = RoundedCornerShape(10.dp)
+                ) { Text("保存方案", fontSize = 13.sp) }
+            }
+        }
+    }
+}
+
+/** 过关方式/套餐选择用的小胶囊按钮 */
+@Composable
+private fun ParlayChip(
+    label: String,
+    selected: Boolean,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier
+            .clip(RoundedCornerShape(9.dp))
+            .background(
+                if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                else MaterialTheme.colorScheme.surface
+            )
+            .border(
+                1.dp,
+                if (selected) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                RoundedCornerShape(9.dp)
+            )
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(vertical = 8.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            label,
+            fontSize = 11.sp,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            color = when {
+                !enabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                selected -> MaterialTheme.colorScheme.primary
+                else -> MaterialTheme.colorScheme.onSurface
+            }
+        )
+    }
+}
+
+/** 计算器结果行：左侧项目名，右侧取值 */
+@Composable
+private fun CalcRow(label: String, value: String) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+        Text(label, Modifier.weight(1f), fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 
@@ -1627,56 +2190,224 @@ private fun TrendArrow(c: OddsCell) {
     )
 }
 
+/* ---------- 综合结论：预测目标行 ---------- */
+
+/** 预测目标一行：综合选项（模型判断优先）+ 架构概率/赔率 + 备选 + 模型理由 + 命中（红色只用于命中） */
 @Composable
-private fun PredictionRow(title: String, pick: Pair<String, String>?) {
-    Row(
+private fun CombinedPickRow(p: CombinedPick) {
+    val accent = Color(0xFFD93A2B)   // 命中红：仅命中时使用
+    val hitStyle = p.hit == true
+    Column(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.07f))
-            .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.16f), RoundedCornerShape(12.dp))
-            .padding(horizontal = 14.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .background(
+                if (hitStyle) accent.copy(alpha = 0.10f)
+                else MaterialTheme.colorScheme.primary.copy(alpha = 0.07f)
+            )
+            .border(
+                1.dp,
+                if (hitStyle) accent.copy(alpha = 0.45f)
+                else MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                RoundedCornerShape(12.dp)
+            )
+            .padding(horizontal = 14.dp, vertical = 11.dp)
     ) {
-        Text(title, fontSize = 13.sp, fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.weight(1f))
-        if (pick != null) {
-            Text(pick.first, fontSize = 13.sp, fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary)
-            if (pick.second.isNotBlank()) {
-                Spacer(Modifier.width(10.dp))
-                Text("赔率 ${pick.second}", fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (hitStyle) {
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(accent)
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text("命中", fontSize = 10.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                }
+                Spacer(Modifier.width(8.dp))
             }
-        } else {
-            Text("暂无数据", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                p.playLabel,
+                fontSize = 13.sp,
+                fontWeight = if (hitStyle) FontWeight.Bold else FontWeight.Medium,
+                color = if (hitStyle) accent else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.weight(1f))
+            Text(
+                "综合置信度 ${p.confidence}",
+                fontSize = 11.sp,
+                fontWeight = if (hitStyle) FontWeight.Bold else FontWeight.Normal,
+                color = if (hitStyle) accent else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Spacer(Modifier.height(5.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (p.option.isNotBlank()) {
+                Text(
+                    p.option,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (hitStyle) accent else MaterialTheme.colorScheme.primary
+                )
+                if (p.odds > 0.0) {
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        "赔率 ${ParlayMath.money(p.odds)}",
+                        fontSize = 11.sp,
+                        color = if (hitStyle) accent.copy(alpha = 0.85f)
+                        else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            } else {
+                Text("暂无数据", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Spacer(Modifier.weight(1f))
+            if (p.alt.isNotEmpty()) {
+                Text(
+                    "备选 ${p.alt}${if (p.altOdds > 0.0) " @${ParlayMath.money(p.altOdds)}" else ""}",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        if (p.reason.isNotBlank()) {
+            Spacer(Modifier.height(3.dp))
+            Text(
+                "理由：${p.reason}",
+                fontSize = 11.sp,
+                lineHeight = 16.sp,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
+        if (p.divergence) {
+            Spacer(Modifier.height(3.dp))
+            Text(
+                "与架构主选分歧，综合置信度已按 0.85 折扣",
+                fontSize = 10.sp,
+                lineHeight = 15.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
 
+/* ---------- 实时建议 ---------- */
+
+/** 凯利公式：f = (b·p − q) / b，b = 赔率 − 1，q = 1 − p；夹取到 0..1 */
+private fun kellyFraction(p: Double, odds: Double): Double {
+    val b = odds - 1.0
+    if (b <= 0.0 || p <= 0.0) return 0.0
+    return ((b * p - (1.0 - p)) / b).coerceIn(0.0, 1.0)
+}
+
+private fun fmtSigned(v: Double): String =
+    (if (v >= 0) "+" else "−") + String.format(Locale.US, "%.2f", kotlin.math.abs(v))
+
+/** 建议卡片：最具价值用金色、最稳健用主色（严禁红色，红色只代表命中） */
 @Composable
-private fun TwoColumnBars(items: List<Pair<String, String>>) {
-    Row(Modifier.fillMaxWidth()) {
-        items.forEachIndexed { i, (name, desc) ->
-            if (i > 0) Spacer(Modifier.width(10.dp))
-            Column(
+private fun AdviceCard(kind: String, pick: CombinedPick, bankroll: Double) {
+    val color = if (kind == "最具价值") Color(0xFFB45309) else MaterialTheme.colorScheme.primary
+    val f = kellyFraction(pick.probability, pick.odds)
+    val stake = bankroll * f
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(color.copy(alpha = 0.08f))
+            .border(1.dp, color.copy(alpha = 0.30f), RoundedCornerShape(12.dp))
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
                 Modifier
-                    .weight(1f)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(MaterialTheme.colorScheme.surface)
-                    .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f), RoundedCornerShape(12.dp))
-                    .padding(horizontal = 10.dp, vertical = 12.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(color)
+                    .padding(horizontal = 6.dp, vertical = 2.dp)
             ) {
-                Text(name, fontSize = 12.sp, fontWeight = FontWeight.Bold,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Spacer(Modifier.height(6.dp))
-                Text(desc, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.primary)
+                Text(kind, fontSize = 10.sp, color = Color.White, fontWeight = FontWeight.Bold)
             }
+            Spacer(Modifier.weight(1f))
+            Text(
+                "概率 ${pctOf(pick.probability)} · 期望 ${fmtSigned(pick.probability * pick.odds - 1.0)}",
+                fontSize = 10.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("${pick.playLabel} ${pick.option}", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = color)
+            Spacer(Modifier.width(8.dp))
+            Text(
+                "赔率 ${ParlayMath.money(pick.odds)}",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            if (f > 0.0) {
+                "参考本金 ${ParlayMath.money(bankroll)} 元 → 全凯利建议投入 ${ParlayMath.money(stake)} 元（f = ${pctOf(f)}）"
+            } else {
+                "按凯利公式本项不建议投入"
+            },
+            fontSize = 11.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        if (pick.note.isNotBlank()) {
+            Spacer(Modifier.height(4.dp))
+            Text(pick.note, fontSize = 10.sp, lineHeight = 14.sp, color = color)
+        }
+        if (pick.reason.isNotBlank()) {
+            Spacer(Modifier.height(4.dp))
+            Text("理由：${pick.reason}", fontSize = 11.sp, lineHeight = 16.sp)
         }
     }
+}
+
+/* ---------- 思路分析（分节展示） ---------- */
+
+@Composable
+private fun AnalysisSection(title: String, content: String) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
+            .padding(horizontal = 12.dp, vertical = 9.dp)
+    ) {
+        Text(title, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+        Spacer(Modifier.height(3.dp))
+        Text(content, fontSize = 12.sp, lineHeight = 19.sp, color = MaterialTheme.colorScheme.onSurface)
+    }
+}
+
+/**
+ * 分节分析为空时的兜底「结论」：只用快照里已有的真实数据（主选/概率/赔率/置信度/数据要点）拼装，
+ * 不编造任何内容，保证「思路分析」在任何情况下都有内容可读。
+ */
+private fun fallbackConclusion(cp: CombinedPrediction): String = buildString {
+    val main = cp.picks.firstOrNull { it.play == SlipPlayCodes.HAD } ?: cp.picks.firstOrNull()
+    if (main != null) {
+        append("综合结论倾向 ${main.playLabel} ${main.option.ifBlank { "暂无数据" }}")
+        if (main.probability > 0.0) {
+            append("（架构概率 ${pctOf(main.probability)}")
+            if (main.odds > 0.0) append("，官方赔率 ${ParlayMath.money(main.odds)}")
+            append("）")
+        }
+        append("，综合置信度 ${main.confidence}。")
+    }
+    cp.bestValue?.let { append("最具价值方向 ${it.playLabel} ${it.option}。") }
+    append("架构整体置信度 ${cp.engineConf}，数据完整度 ${pctOf(cp.dataComplete)}。")
+    if (cp.key.isNotBlank()) append("\n数据要点：${cp.key}")
+    append("\n以上为概率与赔率的数学结果，不构成投注建议。")
+}
+
+/** "2026-09-18 18:30:00" → "09-18 18:30"；仅时间或异常格式时原样返回 */
+private fun kickoffText(time: String): String {
+    val parts = time.split(" ")
+    if (parts.size < 2) return time
+    val date = parts[0]
+    val hm = parts[1].take(5)
+    return (if (date.length >= 10) date.substring(5) else date) + " " + hm
 }
 
 private fun statusText(status: String): String = when (status.uppercase()) {
