@@ -40,22 +40,50 @@ object PredictionPipeline {
 
     /**
      * 单场总时长预算（毫秒）：与 [PredictionBatchRunner] 的单场硬超时（180s）对齐。
-     * 官方前瞻抓取、联网检索与两次模型调用**共享**该预算 ——
-     * 联网检索的 20s 上限因此被计入本场预算，模型调用也不会因为检索耗时叠加而撞上外层硬超时。
+     * 官方前瞻抓取、模型分析、情报生成（含**模型自主检索的往返**）**共享**该预算 ——
+     * 因此不会因为检索轮次叠加而撞上外层硬超时。
      */
     private const val MATCH_BUDGET_MS = 180_000L
 
-    /** 联网检索的单次超时（毫秒）：上限 20s，与检索客户端的整体超时口径一致 */
+    /**
+     * 情报生成的整体时长上限（毫秒）：**含模型自主检索的往返**。
+     * 上游（调用方）单轮模型往返另有 30s 上限，此处约束的是「检索 + 生成」整段。
+     */
+    private const val PREVIEW_TIMEOUT_MS = 60_000L
+
+    /** 检索模式：由模型自主决定并执行的检索（快照口径，见 [CombinedPrediction.searchMode]） */
+    private const val SEARCH_MODE_MODEL = "model"
+
+    /** 检索模式：模型自主检索不可用，回退为应用侧固定检索词检索一次 */
+    private const val SEARCH_MODE_APP = "app"
+
+    /** 已选 Tavily 但未填 Key 时的如实原因（智谱复用对话 API Key，不需要单独配置） */
+    private const val SEARCH_MISSING_KEY = "Tavily 检索未配置 API Key（请在「联网检索」中填写 tvly- 开头的 Key）"
+
+    /** 应用侧检索（降级路径）的单次超时（毫秒）：上限 20s，与检索客户端的整体超时口径一致 */
     private const val SEARCH_TIMEOUT_MS = 20_000L
 
-    /** 发起检索时请求的条数（也是落盘来源条数上限） */
+    /** 检索条数上限（也是落盘来源条数上限） */
     private const val SEARCH_RESULT_COUNT = 5
 
-    /** 检索词长度上限（字符）：服务商（智谱）要求 search_query ≤ 70 字符 */
+    /** 应用侧降级检索词长度上限（字符）：服务商（智谱）要求 search_query ≤ 70 字符 */
     private const val SEARCH_QUERY_MAX = 70
 
     /** 一次联网检索的结果与状态（hits 为空时由 state 说明真实原因，绝不补占位数据） */
     private data class SearchAttempt(val state: String, val hits: List<SearchHit>)
+
+    /**
+     * 情报生成过程的**增量记录**：超时被取消时，已经确认的真实状态仍能保留并落盘
+     * （例如「应用侧检索已记录 failed 原因，但随后的生成超时」）。
+     */
+    private class PreviewRun {
+        var text: String = ""
+        var error: String? = null
+        var mode: String = ""
+        var state: String = ""
+        var rounds: Int = 0
+        var hits: List<SearchHit> = emptyList()
+    }
 
     /** 单场完整预测产物（含计算结果与模型结果的融合），供详情页 / 分析页 / 后台任务统一使用 */
     data class Built(
@@ -82,11 +110,9 @@ object PredictionPipeline {
         val startedAt = System.currentTimeMillis()
         val validCfg = cfg?.takeIf { it.ready }
 
-        // 0) 联网检索（真实网络来源）：与官方前瞻抓取**并发**执行，单次上限 20s；
-        //    检索失败 / 无结果只记录真实状态，绝不阻断本场预测，也绝不伪造来源。
-        val searchJob = validCfg
-            ?.takeIf { it.searchEnabled && withPreview }
-            ?.let { c -> async { runSearch(c, match) } }
+        // 0) 联网检索不再由 App 侧写死检索词预先发起：
+        //    默认在生成前瞻情报时由**模型自主决定并执行检索**（见 [runPreview]）；
+        //    只有模型自主检索整条链路不可用时，才回退到「App 侧固定检索词检索一次」的旧路径。
 
         // 1) 官方前瞻数据（全部真实接口，逐项失败独立降级）
         val head = async { runCatching { MatchPreviewApi.fetchHead(match.matchId) }.getOrNull() }
@@ -131,28 +157,34 @@ object PredictionPipeline {
         // 4) 命中判定（仅已完赛）
         val result = resultOf(match, lv)
 
-        // 5) 前瞻情报 + 模型分析（模型不可用时如实记录原因）
-        //    联网检索结果在此收口：作为真实网络来源拼进情报 prompt（有则允许引用并注明媒体，无则保留禁止联网规则）
-        val searchAttempt = searchJob?.await()
-        val searchHits = searchAttempt?.hits.orEmpty()
-
+        // 5) 前瞻情报：情报由**模型自主检索**驱动生成（降级链见 [runPreview]）；
+        //    检索状态 / 模式 / 往返次数与命中的真实来源一并落盘，绝不伪造来源。
         var previewErr: String? = null
         var preview = ""
+        val previewRun = PreviewRun()
         if (validCfg != null && withPreview) {
-            val budget = minOf(AI_TIMEOUT_MS, remainingMs(startedAt))
+            val budget = minOf(PREVIEW_TIMEOUT_MS, remainingMs(startedAt))
             if (budget <= 0L) {
                 previewErr = "单场时长预算已用尽（含联网检索耗时），已按计算结果继续"
             } else {
-                val r = withTimeoutOrNull(budget) {
-                    PreviewAnalyzer.generate(
+                val done = withTimeoutOrNull(budget) {
+                    runPreview(
                         validCfg,
+                        match,
                         previewContext(match, hd, f, t, r, h, p, inj, fut, engine),
-                        searchHits,
+                        previewRun,
                     )
                 }
-                if (r == null) previewErr = "模型响应超时（${budget / 1000}秒），已按计算结果继续"
-                else r.onSuccess { preview = it }
-                    .onFailure { previewErr = it.message ?: "未知错误" }
+                if (done == null) {
+                    previewErr = "情报生成超时（含模型自主检索往返，${budget / 1000}秒），已按计算结果继续"
+                    // 超时被取消时可能还没确认检索状态：如实记为超时，不臆断
+                    if (previewRun.state.isEmpty()) {
+                        previewRun.state = "failed:超出情报生成时长上限（${budget / 1000}秒）"
+                    }
+                } else if (previewRun.error != null) {
+                    previewErr = previewRun.error
+                }
+                preview = previewRun.text
             }
         }
 
@@ -202,25 +234,73 @@ object PredictionPipeline {
             createdAt = createdAt,
             updatedAt = now,
             reviewCount = reviewCount,
-            // 检索状态与命中的真实来源随情报一起落盘（未启用检索时为空）
-            searchState = searchAttempt?.state.orEmpty(),
-            searchSources = searchHits.take(SEARCH_RESULT_COUNT),
+            // 检索状态 / 模式 / 往返次数与命中的真实来源随情报一起落盘（未启用检索时为空）
+            searchState = previewRun.state,
+            searchMode = previewRun.mode,
+            searchRounds = previewRun.rounds,
+            searchSources = previewRun.hits.take(SEARCH_RESULT_COUNT),
         )
         Built(cp, engine, ai, aiErr, previewErr)
     }
 
-    /* ================= 联网检索（真实网络来源） ================= */
+    /* ================= 情报生成与联网检索（含降级链） ================= */
 
     /**
-     * 执行一次联网检索，并把**真实状态**归一到快照口径：
+     * 情报生成流程（含联网检索的降级链），过程写入 [record]：
+     * 1. **未启用联网检索** → 直接生成（`searchMode=""`、`searchState=""`）；
+     * 2. **模型自主检索**（Tavily 走函数调用循环；智谱走官方内置检索工具）→ 状态如实记录；
+     * 3. 模型自主检索整条链路不可用（接口报错 / 不支持工具声明等）→ 回退到旧的
+     *    「App 侧固定检索词检索一次」路径（`searchMode="app"`），再用这些真实来源生成情报；
+     * 4. 回退也拿不到来源 → 按无检索生成（检索结果仍如实记录）。
+     * 任何一步失败都只记录真实原因，**不阻断本场预测**，也不伪造来源。
+     */
+    private suspend fun runPreview(
+        cfg: LlmConfig,
+        match: RemoteMatch,
+        lines: List<String>,
+        record: PreviewRun,
+    ) {
+        if (!cfg.searchEnabled) {
+            // 选了 Tavily 但没填 Key：如实记录原因（App 侧检索同样会因缺 Key 失败，故不做无意义回退）
+            if (cfg.searchProvider.isNotBlank()) {
+                record.state = "failed:${SEARCH_MISSING_KEY}"
+            }
+            PreviewAnalyzer.generate(cfg, lines, emptyList())
+                .onSuccess { record.text = it }
+                .onFailure { record.error = it.message ?: "未知错误" }
+            return
+        }
+
+        record.mode = SEARCH_MODE_MODEL
+        val driven = PreviewAnalyzer.generateWithModelSearch(cfg, lines)
+        driven.onSuccess { o ->
+            record.text = o.text
+            record.mode = o.mode
+            record.state = o.state
+            record.rounds = o.rounds
+            record.hits = o.hits
+            return
+        }
+
+        // 降级：App 侧固定检索词检索一次（单次上限 20s）
+        val why = driven.exceptionOrNull()?.message ?: "未知原因"
+        record.mode = SEARCH_MODE_APP
+        val attempt = runSearch(cfg, appSearchQuery(match))
+        record.state = attempt.state
+        record.hits = attempt.hits
+        PreviewAnalyzer.generate(cfg, lines, attempt.hits)
+            .onSuccess { record.text = it }
+            .onFailure { record.error = "${it.message ?: "未知错误"}（模型自主检索不可用：$why）" }
+    }
+
+    /**
+     * 执行一次应用侧检索（**仅降级路径使用**），并把**真实状态**归一到快照口径：
      * `"ok"`（命中）/ `"empty"`（返回 0 条）/ `"failed:<原因>"`（含 HTTP 状态码与响应体片段）。
      * 失败只记录原因、不抛异常，**不阻断本场预测**；协程取消继续向上抛出。
      */
-    private suspend fun runSearch(cfg: LlmConfig, match: RemoteMatch): SearchAttempt {
+    private suspend fun runSearch(cfg: LlmConfig, query: String): SearchAttempt {
         val result = try {
-            withTimeoutOrNull(SEARCH_TIMEOUT_MS) {
-                WebSearch.search(cfg, searchQuery(match), SEARCH_RESULT_COUNT)
-            }
+            withTimeoutOrNull(SEARCH_TIMEOUT_MS) { WebSearch.search(cfg, query, SEARCH_RESULT_COUNT) }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -238,8 +318,8 @@ object PredictionPipeline {
         )
     }
 
-    /** 检索词：只用**真实已有数据**（主队 / 客队 / 联赛名 + 伤停 / 首发），并截断到服务商上限 70 字符 */
-    private fun searchQuery(match: RemoteMatch): String {
+    /** 降级路径的检索词：只用**真实已有数据**（主队 / 客队 / 联赛名 + 伤停 / 首发），并截断到服务商上限 */
+    private fun appSearchQuery(match: RemoteMatch): String {
         val raw = listOf(match.home, match.away, match.league, "伤停", "首发")
             .filter { it.isNotBlank() }
             .joinToString(" ")

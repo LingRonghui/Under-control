@@ -98,36 +98,8 @@ fun MineScreen(
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
     ) {
-        // 品牌区
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = Space.lg, vertical = Space.md),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                Modifier
-                    .size(52.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    "彩",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Black,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-            Column(Modifier.padding(start = Space.md).weight(1f)) {
-                Text("彩民小助手", style = MaterialTheme.typography.titleLarge)
-                Text(
-                    "专注竞彩足球 · 数据取自官方接口 · 理性购彩",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
+        // 顶部留白（原「彩民小助手」卡片已按要求移除）
+        Spacer(Modifier.height(Space.sm))
 
         // ===== 盈亏仪表盘 =====
         SurfaceCard(
@@ -136,7 +108,6 @@ fun MineScreen(
         ) {
             SectionTitle(
                 title = "方案盈亏",
-                subtitle = "红 = 盈利 · 绿 = 亏损（中文竞彩习惯）",
                 trailing = {
                     IconButton(onClick = { reloadKey++ }, modifier = Modifier.size(34.dp)) {
                         Icon(

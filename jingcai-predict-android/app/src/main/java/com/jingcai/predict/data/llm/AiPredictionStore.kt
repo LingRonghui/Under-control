@@ -151,6 +151,8 @@ object AiPredictionStore {
                     put("updatedAt", c.updatedAt)
                     put("reviewCount", c.reviewCount)
                     put("searchState", c.searchState)
+                    put("searchMode", c.searchMode)
+                    put("searchRounds", c.searchRounds)
                     put(
                         "searchSources",
                         JSONArray().apply {
@@ -179,7 +181,8 @@ object AiPredictionStore {
             val o = arr.optJSONObject(i) ?: return@mapNotNull null
             val picks = o.optJSONArray("picks") ?: JSONArray()
             val sections = o.optJSONArray("sections") ?: JSONArray()
-            // 旧版本快照没有 searchSources / searchState：按「未启用、无来源」处理（向后兼容，不崩）
+            // 旧版本快照没有 searchState / searchMode / searchRounds / searchSources：
+            // 一律用默认值兜底（未启用、0 次、无来源），向后兼容、不崩
             val searchSources = o.optJSONArray("searchSources") ?: JSONArray()
             CombinedPrediction(
                 matchId = o.optString("matchId", ""),
@@ -208,6 +211,8 @@ object AiPredictionStore {
                 updatedAt = o.optLong("updatedAt", 0L),
                 reviewCount = o.optInt("reviewCount", 0),
                 searchState = o.optString("searchState", ""),
+                searchMode = o.optString("searchMode", ""),
+                searchRounds = o.optInt("searchRounds", 0),
                 searchSources = (0 until searchSources.length()).mapNotNull { j ->
                     val s = searchSources.optJSONObject(j) ?: return@mapNotNull null
                     val url = s.optString("url", "")

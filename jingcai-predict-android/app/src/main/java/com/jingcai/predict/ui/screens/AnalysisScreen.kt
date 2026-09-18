@@ -47,9 +47,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -64,6 +64,7 @@ import com.jingcai.predict.data.llm.CombinedPrediction
 import com.jingcai.predict.data.llm.PredictionBatchRunner
 import com.jingcai.predict.ui.components.EmptyState
 import com.jingcai.predict.ui.components.Hairline
+import com.jingcai.predict.ui.components.HeroNumber
 import com.jingcai.predict.ui.components.IconBadge
 import com.jingcai.predict.ui.components.PillTag
 import com.jingcai.predict.ui.components.SectionTitle
@@ -88,9 +89,6 @@ internal val HitRed: Color = Tone.hit
 
 /** 未中绿：仅用于「已完赛未命中」相关内容 */
 internal val MissGreen: Color = Tone.miss
-
-/** 低置信度灰（<50） */
-private val ConfGray = Color(0xFF9AA0A6)
 
 /**
  * 预测分析：分为「置信度排行」与「回测复盘」两个分类。
@@ -150,13 +148,14 @@ fun AnalysisScreen(onOpenMatch: (CombinedPrediction) -> Unit) {
             Text(
                 "预测分析",
                 Modifier.padding(start = Space.sm),
-                style = MaterialTheme.typography.titleMedium
+                style = MaterialTheme.typography.titleMedium,
+                color = Tone.textStrong()
             )
             Spacer(Modifier.weight(1f))
             Text(
                 if (tabIndex == 0) "共 ${shown.size} 场" else "已结算 ${overview.settledMatches} 场",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                style = MaterialTheme.typography.labelSmall.tabular(),
+                color = Tone.textLabel()
             )
         }
 
@@ -247,7 +246,7 @@ private fun RankingTab(
                     .fillMaxWidth()
                     .padding(top = Space.sm, bottom = Space.sm),
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = Tone.textHint(),
                 textAlign = TextAlign.Center,
                 lineHeight = 18.sp
             )
@@ -263,7 +262,8 @@ private fun RankingTab(
  */
 @Composable
 private fun DashboardCard(o: BacktestOverview, onRefresh: () -> Unit) {
-    val cardHeight = (LocalConfiguration.current.screenHeightDp.dp / 3).coerceAtLeast(236.dp)
+    // 高度约屏幕 1/3；下限保证中心大号命中率与下方指标网格都不被挤压
+    val cardHeight = (LocalConfiguration.current.screenHeightDp.dp / 3).coerceAtLeast(256.dp)
     // 整体命中率（0..1），无数据时为 0；仪表盘入场动画的起点固定为 0
     val rate = (o.overallRate ?: 0.0).toFloat().coerceIn(0f, 1f)
     var appeared by remember { mutableStateOf(false) }
@@ -283,7 +283,7 @@ private fun DashboardCard(o: BacktestOverview, onRefresh: () -> Unit) {
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("命中率仪表盘", style = MaterialTheme.typography.titleMedium)
+                Text("命中率仪表盘", style = MaterialTheme.typography.titleMedium, color = Tone.textStrong())
                 Text(
                     if (o.hasData) {
                         "真实赛果结算 · 已结算 ${o.settledMatches} 场 / ${o.settledPicks} 项"
@@ -291,7 +291,7 @@ private fun DashboardCard(o: BacktestOverview, onRefresh: () -> Unit) {
                         "真实赛果结算"
                     },
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = Tone.textLabel()
                 )
             }
             IconButton(onClick = onRefresh, modifier = Modifier.size(28.dp)) {
@@ -313,22 +313,18 @@ private fun DashboardCard(o: BacktestOverview, onRefresh: () -> Unit) {
                 contentAlignment = Alignment.Center
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        "--",
-                        style = MaterialTheme.typography.displaySmall.tabular(),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    HeroNumber("--", size = 40, color = Tone.textHint())
                     Text(
                         "整体命中率",
                         Modifier.padding(top = Space.xxs),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Tone.textLabel()
                     )
                     Text(
                         "暂无已结算数据（比赛完赛并回写真实赛果后自动统计）",
                         Modifier.padding(top = Space.sm),
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = Tone.textHint(),
                         textAlign = TextAlign.Center,
                         lineHeight = 15.sp
                     )
@@ -337,7 +333,7 @@ private fun DashboardCard(o: BacktestOverview, onRefresh: () -> Unit) {
             return@SurfaceCard
         }
 
-        // 半圆仪表盘：极淡轨道 + 品牌主色渐变进度弧（端点圆头）
+        // 半圆仪表盘：极淡轨道 + 品牌色渐变进度弧（端点圆头），中心大号整体命中率
         Box(
             Modifier
                 .fillMaxWidth()
@@ -345,7 +341,6 @@ private fun DashboardCard(o: BacktestOverview, onRefresh: () -> Unit) {
         ) {
             HalfGauge(
                 progress = animated,
-                primary = MaterialTheme.colorScheme.primary,
                 trackColor = Tone.track(),
                 modifier = Modifier.fillMaxSize()
             )
@@ -355,15 +350,11 @@ private fun DashboardCard(o: BacktestOverview, onRefresh: () -> Unit) {
                     .padding(bottom = Space.xxs),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text(
-                    BacktestStats.rateText(o.overallRate),
-                    style = MaterialTheme.typography.displaySmall.tabular(),
-                    color = MaterialTheme.colorScheme.primary
-                )
+                HeroNumber(BacktestStats.rateText(o.overallRate), size = 40)
                 Text(
                     "整体命中率",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Tone.textLabel()
                 )
             }
         }
@@ -380,7 +371,7 @@ private fun DashboardCard(o: BacktestOverview, onRefresh: () -> Unit) {
             add("最稳健命中率" to BacktestStats.rateText(o.safestRate))
         }
         metrics.chunked(2).forEachIndexed { index, row ->
-            if (index > 0) Spacer(Modifier.height(Space.xs))
+            if (index > 0) Spacer(Modifier.height(Space.sm))
             Row(Modifier.fillMaxWidth()) {
                 row.forEach { (label, value) -> MetricItem(label, value, Modifier.weight(1f)) }
                 repeat(2 - row.size) { Spacer(Modifier.weight(1f)) }
@@ -389,15 +380,16 @@ private fun DashboardCard(o: BacktestOverview, onRefresh: () -> Unit) {
     }
 }
 
-/** 半圆仪表盘：极淡底轨 + 品牌主色到亮色的线性渐变进度弧（端点圆头） */
+/** 半圆仪表盘：极淡底轨 + 品牌色到青色渐变进度弧（端点圆头） */
 @Composable
 private fun HalfGauge(
     progress: Float,
-    primary: Color,
     trackColor: Color,
     modifier: Modifier = Modifier,
     stroke: Dp = 12.dp,
 ) {
+    val brand = Tone.brand
+    val teal = Tone.teal
     Canvas(modifier) {
         val sw = stroke.toPx()
         val radius = minOf((size.width - sw) / 2f, size.height - sw)
@@ -420,7 +412,7 @@ private fun HalfGauge(
         if (v > 0f) {
             drawArc(
                 brush = Brush.linearGradient(
-                    colors = listOf(primary, lerp(primary, Color.White, 0.45f)),
+                    colors = listOf(brand, teal),
                     start = Offset(topLeft.x, topLeft.y),
                     end = Offset(topLeft.x + arcSize.width, topLeft.y)
                 ),
@@ -435,7 +427,7 @@ private fun HalfGauge(
     }
 }
 
-/** 指标网格单元：标签（labelSmall）+ 数值（titleSmall，等宽） */
+/** 指标网格单元：标签（次要）+ 数值（等宽加粗、近白高对比） */
 @Composable
 private fun MetricItem(label: String, value: String, modifier: Modifier = Modifier) {
     Row(
@@ -446,13 +438,15 @@ private fun MetricItem(label: String, value: String, modifier: Modifier = Modifi
             label,
             Modifier.weight(1f),
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = Tone.textLabel(),
             maxLines = 1
         )
         Text(
             value,
+            Modifier.padding(start = Space.xs),
             style = MaterialTheme.typography.titleSmall.tabular(),
-            color = MaterialTheme.colorScheme.onSurface,
+            fontWeight = FontWeight.Bold,
+            color = Tone.textStrong(),
             maxLines = 1
         )
     }
@@ -463,26 +457,20 @@ private fun MetricItem(label: String, value: String, modifier: Modifier = Modifi
 @Composable
 private fun BatchBanner(s: BatchState) {
     val context = LocalContext.current
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = Space.lg, vertical = Space.xs)
-            .clip(Corner.md)
-            .background(Tone.fill())
-            .padding(horizontal = Space.md, vertical = Space.sm)
-    ) {
+    SurfaceCard(modifier = Modifier.padding(horizontal = Space.lg, vertical = Space.xs)) {
         if (s.running) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     "正在批量预测今明两日赛程",
                     Modifier.weight(1f),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Tone.textBody()
                 )
                 Text(
                     if (s.total > 0) "${s.done}/${s.total}" else "…",
-                    style = MaterialTheme.typography.labelSmall.tabular(),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    style = MaterialTheme.typography.labelMedium.tabular(),
+                    fontWeight = FontWeight.Bold,
+                    color = Tone.textStrong()
                 )
             }
             if (s.total > 0) {
@@ -494,21 +482,23 @@ private fun BatchBanner(s: BatchState) {
                 Text(
                     s.current,
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = Tone.textLabel(),
                     maxLines = 1
                 )
             }
         } else if (s.failed == 0 && s.error != null) {
             Text(
                 s.error,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.error
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.error,
+                lineHeight = 16.sp
             )
         } else if (s.failed == 0 && s.total > 0) {
             Text(
                 "后台预测已完成（共 ${s.total} 场）· 结果已保留，重复进入不会重复预测",
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = Tone.textBody(),
+                lineHeight = 15.sp
             )
         }
 
@@ -540,20 +530,20 @@ private fun BatchBanner(s: BatchState) {
 
 /* ================= 综合预测卡片 ================= */
 
-/** 置信度配色：≥70 主色、50-69 中性、<50 灰 */
+/** 置信度配色：≥70 主色、50-69 近白高对比、<50 提示灰（数值一律走对比度阶梯） */
 @Composable
 private fun confColor(v: Int): Color = when {
     v >= 70 -> MaterialTheme.colorScheme.primary
-    v >= 50 -> MaterialTheme.colorScheme.onSurfaceVariant
-    else -> ConfGray
+    v >= 50 -> Tone.textStrong()
+    else -> Tone.textHint()
 }
 
-/** 命中状态配色：命中红、未中绿、未结算中性 */
+/** 命中状态配色：命中红、未中绿、未结算中性（近白高对比） */
 @Composable
 private fun hitColor(hit: Boolean?): Color = when (hit) {
     true -> HitRed
     false -> MissGreen
-    null -> Tone.pending()
+    null -> Tone.textStrong()
 }
 
 /** 命中状态胶囊：命中（红）/ 未中（绿）/ 待结算（中性） */
@@ -586,7 +576,7 @@ private fun CombinedCard(p: CombinedPrediction, onOpenMatch: (CombinedPrediction
         Text(
             "${p.league} · ${p.matchNum} · ${p.kickoff}开赛",
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = Tone.textLabel(),
             maxLines = 1
         )
 
@@ -597,21 +587,18 @@ private fun CombinedCard(p: CombinedPrediction, onOpenMatch: (CombinedPrediction
                 "${p.home} VS ${p.away}",
                 Modifier.weight(1f),
                 style = MaterialTheme.typography.titleMedium,
+                color = Tone.textStrong(),
                 maxLines = 2
             )
             Column(
                 Modifier.padding(start = Space.sm),
                 horizontalAlignment = Alignment.End
             ) {
-                Text(
-                    "${p.rankConfidence}",
-                    style = MaterialTheme.typography.headlineSmall.tabular(),
-                    color = confColor(p.rankConfidence)
-                )
+                HeroNumber("${p.rankConfidence}", size = 26, color = confColor(p.rankConfidence))
                 Text(
                     "综合置信度",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = Tone.textLabel()
                 )
             }
         }
@@ -653,20 +640,20 @@ private fun CombinedCard(p: CombinedPrediction, onOpenMatch: (CombinedPrediction
                 if (p.model.isBlank()) "模型结果（未配置模型）" else "模型综合结论",
                 Modifier.weight(1f),
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = Tone.textLabel(),
                 maxLines = 1
             )
             Text(
                 "更新 ${fmtTime(p.updatedAt)}",
                 style = MaterialTheme.typography.labelSmall.tabular(),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = Tone.textLabel(),
                 maxLines = 1
             )
         }
     }
 }
 
-/** 单玩法选项胶囊：命中状态 + 玩法 + 综合选项 */
+/** 单玩法选项胶囊：命中状态 + 玩法 + 综合选项（选项为高对比数值） */
 @Composable
 private fun PickChip(pick: CombinedPick) {
     Row(
@@ -681,13 +668,14 @@ private fun PickChip(pick: CombinedPick) {
             BacktestStats.playLabel(pick.play),
             Modifier.padding(start = Space.xs),
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = Tone.textLabel(),
             maxLines = 1
         )
         Text(
             pick.option,
             Modifier.padding(start = 3.dp),
-            style = MaterialTheme.typography.titleSmall,
+            style = MaterialTheme.typography.titleSmall.tabular(),
+            fontWeight = FontWeight.Bold,
             color = hitColor(pick.hit),
             maxLines = 1
         )
@@ -700,15 +688,16 @@ private fun ValueLine(tag: String, pick: CombinedPick) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(
             tag,
-            Modifier.width(52.dp),
+            Modifier.width(56.dp),
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = Tone.textLabel(),
             maxLines = 1
         )
         Text(
             hitPrefix(pick.hit) + adviceText(pick),
             Modifier.weight(1f),
-            style = MaterialTheme.typography.labelSmall,
+            style = MaterialTheme.typography.labelMedium.tabular(),
+            fontWeight = FontWeight.SemiBold,
             color = hitColor(pick.hit),
             maxLines = 1
         )

@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  应用内品牌标识（顶栏 / 我的页头像用）：
+  与启动图标同源的极简版——手掌托球，球在掌中被四指环抱。
+  24dp 视口，笔画加粗以保证小尺寸下依然可辨识；配色走品牌绿 + 近白球体。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <!-- 四指（在球后，指尖向内微扣） -->
+    <path
+        android:pathData="M6.6,12.2 C5.9,9.9 6.2,7.8 7.3,6.4"
+        android:strokeColor="#FFB9CBDD"
+        android:strokeWidth="2.1"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M17.4,12.2 C18.1,9.9 17.8,7.8 16.7,6.4"
+        android:strokeColor="#FFB9CBDD"
+        android:strokeWidth="2.1"
+        android:strokeLineCap="round" />
+
+    <!-- 掌心碗 -->
+    <path
+        android:pathData="M4.4,13.2 C4.9,18.4 8.2,21.2 12,21.2 C15.8,21.2 19.1,18.4 19.6,13.2"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round">
+        <aapt:attr name="android:strokeColor">
+            <gradient android:type="linear" android:startX="4.4" android:startY="13.2" android:endX="19.6" android:endY="21.2">
+                <item android:offset="0" android:color="#FF4BE39B" />
+                <item android:offset="1" android:color="#FF00B368" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- 足球（压在掌心之上，形成被托住/被拢住的关系） -->
+    <path android:pathData="M12,9.6 m-5.4,0 a5.4,5.4 0 1,0 10.8,0 a5.4,5.4 0 1,0 -10.8,0">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear" android:startX="8.5" android:startY="5.6" android:endX="15.8" android:endY="14.2">
+                <item android:offset="0" android:color="#FFFFFFFF" />
+                <item android:offset="1" android:color="#FF7CEAAF" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path
+        android:pathData="M12,7.7 L13.9,9.1 L13.2,11.4 L10.8,11.4 L10.1,9.1 Z"
+        android:fillColor="#FF0A1119" />
+</vector>

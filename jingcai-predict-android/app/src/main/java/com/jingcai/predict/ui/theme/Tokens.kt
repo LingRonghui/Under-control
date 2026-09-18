@@ -102,6 +102,60 @@ object Tone {
     /** 品牌主色的柔和描边（用于强调区块） */
     @Composable
     fun brandStroke(): Color = MaterialTheme.colorScheme.primary.copy(alpha = if (isDark()) 0.34f else 0.28f)
+
+    /* ============ 文本层级（对比度阶梯：数据 > 正文 > 标签 > 提示） ============ */
+
+    /** 关键数据：近白，所有重要数值都用它（对比度最高） */
+    @Composable
+    fun textStrong(): Color = if (isDark()) Color(0xFFF7FBFF) else Color(0xFF0A1220)
+
+    /** 正文 */
+    @Composable
+    fun textBody(): Color = if (isDark()) Color(0xFFCBD8E6) else Color(0xFF2A3949)
+
+    /** 标签 / 次要说明 */
+    @Composable
+    fun textLabel(): Color = if (isDark()) Color(0xFF93A7BD) else Color(0xFF57697E)
+
+    /** 提示 / 占位（层级最低，与数据拉开差距） */
+    @Composable
+    fun textHint(): Color = if (isDark()) Color(0xFF5E7188) else Color(0xFF8B9AAC)
+
+    /* ============ 玻璃质感资源 ============ */
+
+    /** 玻璃卡片底：极淡上下渐变，通透而不发灰 */
+    @Composable
+    fun glassBrush(): Brush = if (isDark()) {
+        Brush.verticalGradient(listOf(Color(0x1FFFFFFF), Color(0x0AFFFFFF), Color(0x05FFFFFF)))
+    } else {
+        Brush.verticalGradient(listOf(Color(0xE8FFFFFF), Color(0xBFFFFFFF)))
+    }
+
+    /** 玻璃描边：上沿亮、下沿隐没（关键的通透细节） */
+    @Composable
+    fun glassStroke(): Brush = if (isDark()) {
+        Brush.verticalGradient(listOf(Color(0x40FFFFFF), Color(0x12FFFFFF), Color(0x08FFFFFF)))
+    } else {
+        Brush.verticalGradient(listOf(Color(0xFFFFFFFF), Color(0x2E0F172A)))
+    }
+
+    /** 顶部高光细线 */
+    @Composable
+    fun specular(): Brush = Brush.horizontalGradient(
+        listOf(Color.Transparent, Color(0x59FFFFFF), Color(0x1FFFFFFF), Color.Transparent)
+    )
+
+    /** 品牌色柔光（用于强调区块背后的光晕） */
+    @Composable
+    fun glow(alpha: Float = 0.20f): Brush {
+        val c = MaterialTheme.colorScheme.primary
+        return Brush.radialGradient(listOf(c.copy(alpha = alpha), c.copy(alpha = 0f)))
+    }
+
+    /** 品牌色与辅助色（数据可视化用） */
+    val brand: Color = Color(0xFF00D37A)
+    val brandDeep: Color = Color(0xFF00915A)
+    val teal: Color = Color(0xFF2ED9C3)
 }
 
 /** 数字等宽：金额/赔率/概率等数字列对齐更整齐 */

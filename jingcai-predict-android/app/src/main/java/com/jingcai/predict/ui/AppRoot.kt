@@ -54,6 +54,7 @@ import com.jingcai.predict.data.slip.SlipHolder
 import com.jingcai.predict.data.slip.SlipStore
 import com.jingcai.predict.ui.components.AppSnackbarHost
 import com.jingcai.predict.ui.components.MessageHost
+import com.jingcai.predict.ui.components.appBackground
 import com.jingcai.predict.ui.components.UiMessage
 import com.jingcai.predict.ui.screens.AnalysisScreen
 import com.jingcai.predict.ui.screens.DetailHolder
@@ -187,7 +188,8 @@ fun AppRoot(
         NavHost(
             navController = navController,
             startDestination = "matches",
-            modifier = Modifier.padding(padding)
+            // 全局氛围底：深空底 + 品牌绿/青双色柔光，所有页面共用同一层
+            modifier = Modifier.padding(padding).appBackground()
         ) {
             composable("matches") {
                 MatchesScreen(

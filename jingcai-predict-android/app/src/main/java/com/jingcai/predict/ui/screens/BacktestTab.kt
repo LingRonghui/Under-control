@@ -150,7 +150,7 @@ fun BacktestContent(all: List<CombinedPrediction>) {
                     .fillMaxWidth()
                     .padding(top = Space.sm, bottom = Space.sm, start = Space.lg, end = Space.lg),
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = Tone.textHint(),
                 textAlign = TextAlign.Center,
                 lineHeight = 15.sp
             )
@@ -166,13 +166,13 @@ private fun HintCard(text: String) {
         Text(
             text,
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = Tone.textBody(),
             lineHeight = 17.sp
         )
     }
 }
 
-/** 轻量行：左标签（labelSmall）+ 右数值（等宽、右对齐） */
+/** 轻量行：左标签（次要）+ 右数值（等宽加粗、右对齐、高对比） */
 @Composable
 private fun StatLine(label: String, value: String, valueColor: Color = Color.Unspecified) {
     Row(
@@ -185,14 +185,15 @@ private fun StatLine(label: String, value: String, valueColor: Color = Color.Uns
             label,
             Modifier.weight(1f),
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = Tone.textLabel(),
             maxLines = 1
         )
         Text(
             value,
+            Modifier.padding(start = Space.sm),
             style = MaterialTheme.typography.bodySmall.tabular(),
-            fontWeight = FontWeight.SemiBold,
-            color = if (valueColor == Color.Unspecified) MaterialTheme.colorScheme.onSurface else valueColor,
+            fontWeight = FontWeight.Bold,
+            color = if (valueColor == Color.Unspecified) Tone.textStrong() else valueColor,
             maxLines = 1
         )
     }
@@ -211,7 +212,7 @@ private fun StatusLine(label: String, hit: Boolean?) {
             label,
             Modifier.weight(1f),
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = Tone.textLabel(),
             maxLines = 1
         )
         HitPill(hit)
@@ -240,7 +241,7 @@ private fun ReviewBlock(label: String, content: @Composable ColumnScope.() -> Un
             label,
             Modifier.width(56.dp),
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = Tone.textLabel(),
             maxLines = 1
         )
         Column(
@@ -266,7 +267,7 @@ private fun ActionButton(text: String, primary: Boolean, onClick: () -> Unit) {
             contentColor = if (primary) {
                 MaterialTheme.colorScheme.primary
             } else {
-                MaterialTheme.colorScheme.onSurfaceVariant
+                Tone.textBody()
             }
         ),
         contentPadding = PaddingValues(horizontal = Space.lg, vertical = Space.sm)
@@ -321,7 +322,7 @@ private fun OverviewSection(o: BacktestOverview) {
         Text(
             "口径：整体命中率 = 命中玩法数 ÷ 已结算玩法数（hit != null 的项）；未结算场次不计入。",
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = Tone.textHint(),
             lineHeight = 15.sp
         )
     }
@@ -341,19 +342,19 @@ private fun CalibrationSection(bins: List<CalibrationBin>) {
         }
         Spacer(Modifier.height(Space.xs))
         Hairline()
-        bins.forEach { b ->
+        bins.forEachIndexed { i, b ->
             val dev = b.deviation
             val significant = dev != null && abs(dev) >= BacktestStats.SIGNIFICANT_PP
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 7.dp),
+                    .padding(vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 CalibCell(
                     b.label,
                     1.1f,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = Tone.textStrong(),
                     bold = true
                 )
                 CalibCell(if (b.count == 0) "--" else "${b.count}", 0.7f)
@@ -365,24 +366,25 @@ private fun CalibrationSection(bins: List<CalibrationBin>) {
                     color = if (significant) {
                         MaterialTheme.colorScheme.tertiary
                     } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
+                        Tone.textStrong()
                     },
                     bold = significant
                 )
             }
+            if (i < bins.lastIndex) Hairline()
         }
         Spacer(Modifier.height(Space.sm))
         Text(
             "偏差 = 实际命中率 − 平均预测概率；空箱（无已结算项）显示 --。",
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = Tone.textHint(),
             lineHeight = 15.sp
         )
         Text(
             "校准分析 = 把预测概率与实际命中频率对比，偏差用于校准参数，不涉及任何训练或学习。",
             Modifier.padding(top = Space.xxs),
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = Tone.textHint(),
             lineHeight = 15.sp
         )
     }
@@ -400,9 +402,9 @@ private fun RowScope.CalibCell(
         text,
         Modifier.weight(weight),
         style = if (header) MaterialTheme.typography.labelSmall else MaterialTheme.typography.bodySmall.tabular(),
-        fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal,
+        fontWeight = if (bold) FontWeight.Bold else FontWeight.Medium,
         color = if (color == Color.Unspecified) {
-            if (header) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
+            if (header) Tone.textLabel() else Tone.textStrong()
         } else {
             color
         },
@@ -441,20 +443,27 @@ private fun SuggestionCard(c: LeagueCalibration) {
                 c.league,
                 Modifier.weight(1f),
                 style = MaterialTheme.typography.titleMedium,
+                color = Tone.textStrong(),
                 maxLines = 1
             )
-            PillTag("样本 ${c.settledMatches} 场", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            PillTag("样本 ${c.settledMatches} 场", color = Tone.textLabel())
             Spacer(Modifier.width(Space.xs))
             DirectionPill(c.direction)
         }
         Spacer(Modifier.height(Space.sm))
         Text(
-            "校准依据（胜平负 + 让球）：已结算 ${c.settledPicks} 项 · 平均预测概率 " +
-                "${BacktestStats.rateText(c.avgProbability)} · 实际命中 ${BacktestStats.rateText(actualRate)} · " +
-                "偏差 ${BacktestStats.deviationText(c.deviation)}",
-            style = MaterialTheme.typography.bodySmall.tabular(),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            lineHeight = 17.sp
+            "校准依据（胜平负 + 让球）",
+            style = MaterialTheme.typography.labelSmall,
+            color = Tone.textLabel()
+        )
+        Spacer(Modifier.height(Space.xxs))
+        StatLine("已结算", "${c.settledPicks} 项")
+        StatLine("平均预测概率", BacktestStats.rateText(c.avgProbability))
+        StatLine("实际命中", BacktestStats.rateText(actualRate))
+        StatLine(
+            "偏差",
+            BacktestStats.deviationText(c.deviation),
+            valueColor = if (c.direction != null) MaterialTheme.colorScheme.tertiary else Tone.textStrong()
         )
         Spacer(Modifier.height(Space.xs))
         Text(
@@ -467,7 +476,7 @@ private fun SuggestionCard(c: LeagueCalibration) {
             },
             style = MaterialTheme.typography.bodySmall,
             lineHeight = 17.sp,
-            color = MaterialTheme.colorScheme.onSurface
+            color = Tone.textBody()
         )
 
         if (target != null) {
@@ -478,7 +487,7 @@ private fun SuggestionCard(c: LeagueCalibration) {
             Text(
                 "当前参数",
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = Tone.textLabel()
             )
             Text(
                 "drawBias ${BacktestStats.paramText(from.drawBias)} · " +
@@ -486,7 +495,8 @@ private fun SuggestionCard(c: LeagueCalibration) {
                     "泊松 ${BacktestStats.paramText(from.weights.poisson)} · " +
                     "统计 ${BacktestStats.paramText(from.weights.stat)}",
                 style = MaterialTheme.typography.bodySmall.tabular(),
-                color = MaterialTheme.colorScheme.onSurface
+                fontWeight = FontWeight.SemiBold,
+                color = Tone.textStrong()
             )
             Spacer(Modifier.height(Space.xs))
             Text(
@@ -501,6 +511,7 @@ private fun SuggestionCard(c: LeagueCalibration) {
                     "统计 ${BacktestStats.paramText(target.weights.stat)}" +
                     "（avgGoals / homeAdv / rho 保持不变）",
                 style = MaterialTheme.typography.bodySmall.tabular(),
+                fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.primary
             )
         }
@@ -547,7 +558,7 @@ private fun DirectionPill(direction: CalibDirection?) {
     when (direction) {
         CalibDirection.OPTIMISTIC -> PillTag("预测偏乐观", color = MaterialTheme.colorScheme.tertiary)
         CalibDirection.CONSERVATIVE -> PillTag("预测偏保守", color = MaterialTheme.colorScheme.secondary)
-        null -> PillTag("无需调整", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        null -> PillTag("无需调整", color = Tone.textLabel())
     }
 }
 
@@ -564,15 +575,16 @@ private fun ReviewCard(p: CombinedPrediction) {
                 "${p.league} · ${p.matchNum}",
                 Modifier.weight(1f),
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = Tone.textLabel(),
                 maxLines = 1
             )
-            PillTag("已完赛", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            PillTag("已完赛", color = Tone.textLabel())
         }
         Spacer(Modifier.height(Space.xs))
         Text(
             "${p.home} VS ${p.away}",
             style = MaterialTheme.typography.titleSmall,
+            color = Tone.textStrong(),
             maxLines = 1
         )
 
@@ -593,7 +605,7 @@ private fun ReviewCard(p: CombinedPrediction) {
             Text(
                 "本场无赛果数据，无法判定",
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = Tone.textHint()
             )
             return@SurfaceCard
         }

@@ -32,9 +32,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.jingcai.predict.data.slip.ParlayMath
 import com.jingcai.predict.data.slip.SavedSlip
 import com.jingcai.predict.data.slip.SlipAutoSettle
@@ -94,21 +96,22 @@ fun SlipCenterScreen(onBack: () -> Unit) {
                     Icons.AutoMirrored.Outlined.ArrowBack,
                     contentDescription = "返回",
                     modifier = Modifier.size(20.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    tint = Tone.textLabel()
                 )
             }
             Spacer(Modifier.width(Space.xs))
             Text(
                 "方案中心",
                 Modifier.weight(1f),
-                style = MaterialTheme.typography.titleLarge
+                style = MaterialTheme.typography.titleLarge,
+                color = Tone.textStrong()
             )
             IconButton(onClick = { refreshKey++ }, modifier = Modifier.size(40.dp)) {
                 Icon(
                     Icons.Outlined.Refresh,
                     contentDescription = "更新赛果",
                     modifier = Modifier.size(19.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    tint = Tone.textLabel()
                 )
             }
         }
@@ -147,7 +150,7 @@ fun SlipCenterScreen(onBack: () -> Unit) {
                         .fillMaxWidth()
                         .padding(top = Space.sm, bottom = Space.lg),
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = Tone.textHint(),
                     textAlign = TextAlign.Center
                 )
             }
@@ -177,14 +180,14 @@ private fun SlipCard(slip: SavedSlip, onDelete: () -> Unit) {
                 formatTime(slip.createdAt),
                 Modifier.weight(1f),
                 style = MaterialTheme.typography.labelSmall.tabular(),
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = Tone.textLabel()
             )
             IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) {
                 Icon(
                     Icons.Outlined.Delete,
                     contentDescription = "删除方案",
                     modifier = Modifier.size(16.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    tint = Tone.textLabel()
                 )
             }
         }
@@ -203,21 +206,25 @@ private fun SlipCard(slip: SavedSlip, onDelete: () -> Unit) {
                 value = ParlayMath.money(slip.maxPrize),
                 modifier = Modifier.weight(1f),
                 unit = "元",
+                valueColor = Tone.textStrong(),
             )
         }
 
         if (slip.status == SlipStatus.WON) {
             Spacer(Modifier.height(Space.md))
+            Hairline()
+            Spacer(Modifier.height(Space.xs))
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     "中奖金额",
                     Modifier.weight(1f),
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = Tone.textLabel()
                 )
                 Text(
                     "${ParlayMath.money(slip.prize)} 元",
-                    style = MaterialTheme.typography.titleMedium.tabular(),
+                    style = MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp).tabular(),
+                    fontWeight = FontWeight.Bold,
                     color = Tone.hit
                 )
             }
@@ -226,7 +233,9 @@ private fun SlipCard(slip: SavedSlip, onDelete: () -> Unit) {
         Spacer(Modifier.height(Space.md))
         Hairline()
         KeyValueRow("过关方式", ParlayMath.parlayText(slip.parlay))
+        Hairline()
         KeyValueRow("倍数", "${slip.multiple} 倍")
+        Hairline()
         KeyValueRow("注数", "${slip.noteCount} 注")
 
         Spacer(Modifier.height(Space.sm))
@@ -258,14 +267,16 @@ private fun LegRow(leg: SlipLeg) {
         Column(Modifier.weight(1f)) {
             Text(
                 "${leg.matchNum} ${leg.league} ${leg.home} vs ${leg.away}",
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = Tone.textStrong(),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             Text(
                 "${leg.playLabel} ${leg.optionLabel} @${leg.odds}",
-                style = MaterialTheme.typography.labelSmall.tabular(),
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                style = MaterialTheme.typography.labelMedium.tabular(),
+                color = Tone.textLabel()
             )
         }
         Spacer(Modifier.width(Space.sm))

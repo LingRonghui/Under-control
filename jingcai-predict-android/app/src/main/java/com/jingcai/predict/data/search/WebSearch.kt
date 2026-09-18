@@ -8,6 +8,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
 import java.net.URI
@@ -108,6 +109,10 @@ private fun hostOf(url: String): String = runCatching {
  * - 响应：`search_result[]`，每项含 `title` / `content` / `link` / `media` / `icon` /
  *   `refer` / `publish_date`；另有顶层 `id` / `created` / `request_id` / `search_intent`
  * - 失败响应：`{"error": {"code": ..., "message": ...}}`
+ *
+ * 【另一条链路（模型自主检索）】智谱还支持在 `POST {base}/chat/completions` 里声明**官方内置检索工具**
+ * （`tools: [{"type":"web_search","web_search":{...}}]`），由模型自己决定检索词并联网；
+ * 检索来源在对话响应**顶层 `web_search[]`** 返回，由 [parseToolHits] 解析。
  */
 object ZhipuWebSearch : SearchProvider {
 
@@ -170,24 +175,46 @@ object ZhipuWebSearch : SearchProvider {
                     }
                     val arr = obj.optJSONArray("search_result")
                         ?: throw parseError(body, "响应缺少 search_result 字段")
-                    (0 until arr.length()).mapNotNull { i ->
-                        val item = arr.optJSONObject(i) ?: return@mapNotNull null
-                        val link = item.optString("link", "").trim()
-                        val title = item.optString("title", "").trim()
-                        if (link.isEmpty() && title.isEmpty()) return@mapNotNull null
-                        val media = item.optString("media", "").trim()
-                        val refer = item.optString("refer", "").trim()
-                        SearchHit(
-                            title = title.ifEmpty { link },
-                            url = link,
-                            snippet = item.optString("content", "").trim(),
-                            source = media.ifEmpty { refer.ifEmpty { hostOf(link) } },
-                            publishDate = item.optString("publish_date", "").trim(),
-                        )
-                    }
+                    (0 until arr.length()).mapNotNull { i -> arr.optJSONObject(i)?.let { zhipuHit(it) } }
                 }
             }
         }
+
+    /**
+     * 解析「对话中的网络搜索」响应里**顶层 `web_search[]`** 的检索来源（官方内置 `web_search` 工具使用）。
+     *
+     * 【官方文档核实（2026-09，https://docs.bigmodel.cn/api-reference/模型-api/对话补全）】
+     * 响应中存在顶层字段 `web_search`：对象数组，元素含 `icon` / `title` / `link` / `media` /
+     * `publish_date` / `content` / `refer`，文档原文标注「返回与网页搜索相关的信息，使用
+     * WebSearchToolSchema 时返回」。该结构与 Web Search API 的 `search_result[]` 同构，
+     * 因此复用同一套映射（[zhipuHit]）。
+     *
+     * 解析不到（字段缺失 / 空数组）时返回空列表——**不猜测、不补占位来源**，
+     * 由调用方按「未能确认检索发生」如实记录。
+     */
+    fun parseToolHits(arr: JSONArray?): List<SearchHit> {
+        if (arr == null) return emptyList()
+        return (0 until arr.length()).mapNotNull { i -> arr.optJSONObject(i)?.let { zhipuHit(it) } }
+    }
+}
+
+/**
+ * 智谱单条结果（Web Search API 的 `search_result[]` 与对话响应顶层 `web_search[]` 同构）→ [SearchHit]。
+ * 链接与标题同时为空视为无效项（返回 null，不生成占位数据）；媒体名缺失时回退 refer / 域名。
+ */
+private fun zhipuHit(item: JSONObject): SearchHit? {
+    val link = item.optString("link", "").trim()
+    val title = item.optString("title", "").trim()
+    if (link.isEmpty() && title.isEmpty()) return null
+    val media = item.optString("media", "").trim()
+    val refer = item.optString("refer", "").trim()
+    return SearchHit(
+        title = title.ifEmpty { link },
+        url = link,
+        snippet = item.optString("content", "").trim(),
+        source = media.ifEmpty { refer.ifEmpty { hostOf(link) } },
+        publishDate = item.optString("publish_date", "").trim(),
+    )
 }
 
 /* ================= Tavily 搜索 ================= */
@@ -204,8 +231,12 @@ object ZhipuWebSearch : SearchProvider {
  *   且会自动开启 published_date)、`include_published_date`(bool)、`include_answer`(bool)
  * - 时间范围字段为 `time_range`(day/week/month/year/d/w/m/y)、`start_date`、`end_date`；
  *   **当前文档已没有 `days` 字段**（更早版本才有），故实现不使用 days，避免发无效参数
- * - 响应：`results[]`，每项含 `title` / `url` / `content` / `score` / `raw_content` /
- *   `published_date` / `favicon` / `images` / `id`；另有 `query` / `answer` / `response_time` / `request_id`
+ * - 响应（openapi.json 已核实）：`results[]`，每项含 `title` / `url` / `content` / `score` /
+ *   `raw_content` / `favicon` / `images` / `id`；顶层另有 `query` / `images` / `answer` /
+ *   `response_time` / `usage` / `request_id`。其中 `published_date` **不在 OpenAPI 的 items
+ *   属性表里**，但参数说明明确「`include_published_date` = true 时在每个结果中返回
+ *   `published_date` 字段（topic=news 时自动开启）」——故本实现开启该参数后再读取该字段，
+ *   服务商未返回时为 null/缺失，一律回退为空字符串（不猜日期）。
  * - 失败响应：`{"detail": {"error": "..."}}`（400 / 401 / 429 / 432 / 433 / 500）
  * - 该接口**不返回媒体名**，因此 source 用链接域名回填（可溯源、不编造）
  */
@@ -288,4 +319,40 @@ object WebSearch {
         }
         return provider.search(cfg, query, count)
     }
+
+    /**
+     * 把真实检索结果整理成给模型看的逐行文本（情报 prompt 与展示共用同一口径）。
+     * 只做「编号 + 标题 + 站点名 + 摘要截断」，不改写内容、不补齐缺失字段。
+     */
+    fun promptLines(hits: List<SearchHit>, maxHits: Int, maxSnippetChars: Int): List<String> =
+        hits.take(maxHits).mapIndexed { index, h ->
+            val source = h.source.ifBlank { "来源站点未标注" }
+            val snippet = h.snippet.replace(Regex("\\s+"), " ").trim().take(maxSnippetChars)
+            "${index + 1}. ${h.title}（$source）${if (snippet.isNotEmpty()) "：$snippet" else ""}"
+        }
+
+    /**
+     * 函数调用（tool calling）回填给模型的检索结果 JSON（`{"role":"tool"}` 消息的 content）。
+     * 字段与 [SearchHit] 一一对应（title / url / source / publishDate / snippet），**原样透传**；
+     * 失败由调用方以 `{"error": "<原始原因>"}` 形式如实回填，绝不伪造结果。
+     */
+    fun toolContent(query: String, hits: List<SearchHit>): String = JSONObject().apply {
+        put("query", query)
+        put(
+            "results",
+            JSONArray().apply {
+                hits.forEach { h ->
+                    put(
+                        JSONObject().apply {
+                            put("title", h.title)
+                            put("url", h.url)
+                            put("source", h.source)
+                            put("publishDate", h.publishDate)
+                            put("snippet", h.snippet)
+                        }
+                    )
+                }
+            },
+        )
+    }.toString()
 }

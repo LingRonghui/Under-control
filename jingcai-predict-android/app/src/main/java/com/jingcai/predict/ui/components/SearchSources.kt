@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import com.jingcai.predict.data.search.SearchHit
 import com.jingcai.predict.ui.theme.Corner
 import com.jingcai.predict.ui.theme.Space
+import com.jingcai.predict.ui.theme.Tone
 import com.jingcai.predict.ui.theme.tabular
 
 /**
@@ -43,19 +44,21 @@ fun SearchSourcesBlock(
     sources: List<SearchHit>,
     onOpen: (String) -> Unit,
     modifier: Modifier = Modifier,
+    note: String? = null,
+    emptyText: String = "本次未获取到网络检索结果",
 ) {
     SurfaceCard(modifier) {
         SectionTitle(
             title = "参考来源",
-            subtitle = if (sources.isEmpty()) null else "网络检索真实抓取结果（${sources.size} 条）",
+            subtitle = note ?: if (sources.isEmpty()) null else "网络检索真实抓取结果（${sources.size} 条）",
         )
         Spacer(Modifier.height(Space.md))
         if (sources.isEmpty()) {
             Text(
-                "本次未获取到网络检索结果",
+                emptyText,
                 Modifier.alpha(0.9f),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = Tone.textLabel(),
             )
         } else {
             sources.forEachIndexed { index, hit ->

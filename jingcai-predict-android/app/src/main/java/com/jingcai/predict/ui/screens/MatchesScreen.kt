@@ -54,6 +54,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.jingcai.predict.data.MatchInfo
 import com.jingcai.predict.data.MatchStatus
+import com.jingcai.predict.ui.components.BrandMark
 import com.jingcai.predict.data.remote.JingCaiApi
 import com.jingcai.predict.data.remote.LiveMatchBrief
 import com.jingcai.predict.data.remote.MatchPreviewApi
@@ -216,81 +217,90 @@ fun MatchesScreen(
         liveList.size + finishedList.count { (timeById[it.id] ?: "").startsWith(todayStr) }
 
     Column(Modifier.fillMaxSize()) {
-        // 品牌栏
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(start = Space.lg, end = Space.lg, top = Space.md),
-            verticalAlignment = Alignment.CenterVertically
+        // 品牌玻璃条：品牌标识 + 今日场次胶囊
+        SurfaceCard(
+            modifier = Modifier.padding(start = Space.lg, end = Space.lg, top = Space.md),
+            accent = true,
+            contentPadding = PaddingValues(horizontal = Space.md, vertical = Space.sm + 2.dp)
         ) {
-            Box(
-                Modifier
-                    .size(26.dp)
-                    .clip(Corner.sm)
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(
-                                MaterialTheme.colorScheme.primary,
-                                MaterialTheme.colorScheme.primary.copy(alpha = 0.72f)
-                            )
-                        )
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Text("⚡", fontSize = 13.sp, color = MaterialTheme.colorScheme.onPrimary)
-            }
-            Text(
-                "Under Control",
-                Modifier.padding(start = Space.sm),
-                style = MaterialTheme.typography.titleLarge
-            )
-            Spacer(Modifier.weight(1f))
-            Row(
-                Modifier
-                    .clip(Corner.pill)
-                    .background(Tone.fill())
-                    .border(1.dp, Tone.hairline(), Corner.pill)
-                    .padding(horizontal = Space.sm, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     Modifier
-                        .size(6.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primary)
-                )
+                        .size(30.dp)
+                        .clip(Corner.sm)
+                        .background(Tone.fill())
+                        .border(1.dp, Tone.glassStroke(), Corner.sm),
+                    contentAlignment = Alignment.Center
+                ) {
+                    BrandMark(size = 22.dp)
+                }
                 Text(
-                    "今日 $todayCount 场",
-                    Modifier.padding(start = 5.dp),
-                    style = MaterialTheme.typography.labelSmall.tabular(),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    "Under Control",
+                    Modifier.padding(start = Space.sm),
+                    style = MaterialTheme.typography.titleLarge,
+                    color = Tone.textStrong()
                 )
+                Spacer(Modifier.weight(1f))
+                Row(
+                    Modifier
+                        .clip(Corner.pill)
+                        .background(Tone.fill())
+                        .border(1.dp, Tone.hairline(), Corner.pill)
+                        .padding(horizontal = Space.sm + 2.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        Modifier
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.primary)
+                    )
+                    Text(
+                        "今日",
+                        Modifier.padding(start = 6.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Tone.textLabel()
+                    )
+                    Text(
+                        todayCount.toString(),
+                        Modifier.padding(start = 3.dp),
+                        style = MaterialTheme.typography.labelLarge.tabular()
+                            .copy(fontWeight = FontWeight.Bold),
+                        color = Tone.textStrong()
+                    )
+                    Text(
+                        "场",
+                        Modifier.padding(start = 2.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Tone.textLabel()
+                    )
+                }
             }
         }
 
-        // 搜索框：胶囊入口（点击进入搜索页）
+        // 搜索入口：胶囊玻璃质感（点击进入搜索页）
         Row(
             Modifier
                 .fillMaxWidth()
                 .padding(horizontal = Space.lg, vertical = Space.md)
                 .clip(Corner.pill)
-                .background(Tone.fill())
-                .border(1.dp, Tone.hairline(), Corner.pill)
+                .background(Tone.glassBrush())
+                .border(1.dp, Tone.glassStroke(), Corner.pill)
                 .clickable { onSearchClick() }
-                .padding(horizontal = Space.md, vertical = 10.dp),
+                .padding(horizontal = Space.md, vertical = 11.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
                 Icons.Outlined.Search,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                tint = Tone.textLabel(),
                 modifier = Modifier.size(17.dp)
             )
             Text(
                 "搜索联赛 / 比赛",
                 Modifier.padding(start = Space.sm),
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = Tone.textLabel()
             )
         }
 
@@ -315,7 +325,7 @@ fun MatchesScreen(
                     Text(
                         "正在加载竞彩赛事…",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = Tone.textBody()
                     )
                 }
             }
@@ -418,7 +428,7 @@ fun MatchesScreen(
                                 .fillMaxWidth()
                                 .padding(top = Space.xl),
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                            color = Tone.textHint(),
                             textAlign = TextAlign.Center
                         )
                     }
@@ -442,8 +452,8 @@ private fun GroupHeader(title: String, count: Int) {
         trailing = {
             Text(
                 "$count 场",
-                style = MaterialTheme.typography.labelSmall.tabular(),
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                style = MaterialTheme.typography.labelMedium.tabular(),
+                color = Tone.textLabel()
             )
         }
     )
@@ -513,16 +523,16 @@ private fun MatchCard(
 ) {
     val live = match.status == MatchStatus.LIVE
     val favTint by animateColorAsState(
-        targetValue = if (faved) MaterialTheme.colorScheme.primary
-        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+        targetValue = if (faved) MaterialTheme.colorScheme.primary else Tone.textLabel(),
         animationSpec = tween(180),
         label = "favTint"
     )
     SurfaceCard(
         modifier = Modifier
             .padding(horizontal = Space.lg)
-            .alpha(if (match.status == MatchStatus.FINISHED) 0.86f else 1f),
+            .alpha(if (match.status == MatchStatus.FINISHED) 0.9f else 1f),
         onClick = onClick,
+        accent = live,
         contentPadding = PaddingValues(
             start = Space.md,
             end = Space.xs,
@@ -536,16 +546,15 @@ private fun MatchCard(
                 Text(
                     match.num,
                     style = MaterialTheme.typography.labelSmall.tabular(),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                    color = Tone.textLabel(),
                     maxLines = 1
                 )
                 Spacer(Modifier.height(Space.xxs))
                 Text(
                     match.kickoff,
                     style = MaterialTheme.typography.titleSmall
-                        .copy(fontSize = 14.sp, fontWeight = FontWeight.Bold).tabular(),
-                    color = if (live) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.onSurface,
+                        .copy(fontSize = 15.sp, fontWeight = FontWeight.Bold).tabular(),
+                    color = if (live) MaterialTheme.colorScheme.primary else Tone.textStrong(),
                     maxLines = 1
                 )
                 Spacer(Modifier.height(Space.xs))
@@ -561,7 +570,7 @@ private fun MatchCard(
                         match.league,
                         Modifier.padding(bottom = Space.xs),
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = Tone.textLabel(),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -605,9 +614,9 @@ private fun TeamLine(name: String, color: Color, score: String?, live: Boolean) 
             Modifier
                 .padding(start = Space.sm)
                 .weight(1f),
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onSurface,
+            style = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.sp),
+            fontWeight = FontWeight.SemiBold,
+            color = Tone.textStrong(),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
@@ -615,10 +624,9 @@ private fun TeamLine(name: String, color: Color, score: String?, live: Boolean) 
             Text(
                 score,
                 Modifier.padding(start = Space.sm),
-                style = MaterialTheme.typography.bodyLarge
-                    .copy(fontWeight = FontWeight.Bold).tabular(),
-                color = if (live) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.titleMedium
+                    .copy(fontSize = 18.sp, fontWeight = FontWeight.Bold).tabular(),
+                color = if (live) MaterialTheme.colorScheme.primary else Tone.textStrong(),
                 maxLines = 1
             )
         }
@@ -634,14 +642,14 @@ private fun OddsText(label: String, value: Double) {
         Text(
             label,
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = Tone.textLabel()
         )
         Text(
             if (value > 0) value.toString() else "--",
             Modifier.padding(start = Space.xs),
-            style = MaterialTheme.typography.labelLarge.tabular(),
-            color = if (value > 0) MaterialTheme.colorScheme.onSurface
-            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+            style = MaterialTheme.typography.titleSmall
+                .copy(fontSize = 17.sp, fontWeight = FontWeight.Bold).tabular(),
+            color = if (value > 0) Tone.textStrong() else Tone.textHint(),
             maxLines = 1
         )
     }
@@ -666,12 +674,12 @@ private fun StatusChip(match: MatchInfo) {
         MatchStatus.FINISHED -> Text(
             "已完赛",
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
+            color = Tone.textHint()
         )
         MatchStatus.UPCOMING -> Text(
             "未开赛",
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
+            color = Tone.textLabel()
         )
     }
 }

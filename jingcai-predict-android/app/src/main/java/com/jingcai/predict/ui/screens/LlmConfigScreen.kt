@@ -81,7 +81,9 @@ private val SEARCH_PROVIDER_OPTIONS = listOf(
 /**
  * 模型配置页：选择服务预设、填写接口地址 / API Key / 模型名，
  * 支持从接口拉取真实模型列表、测试连通性，并把配置保存在本机（DataStore）。
- * 另含「联网检索」配置：关闭 / 智谱（复用上方 Key）/ Tavily，并可用固定检索词实测检索链路。
+ * 另含「联网检索」配置：关闭 / 智谱（复用上方 Key）/ Tavily。
+ * 情报的联网检索由模型自主发起（智谱走官方内置检索工具、Tavily 走函数调用）；
+ * 本页的「测试检索」只直接调一次检索接口，用于验证检索链路本身是否可用。
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -483,9 +485,17 @@ fun LlmConfigScreen(onBack: () -> Unit) {
             // 7) 联网检索
             SectionCard("联网检索") {
                 Text(
-                    "开启后，生成赛前情报前会先向所选服务商发起一次真实网络检索；" +
-                        "命中的来源会随情报保存在本场结果里（详情页展示、可点击打开）。" +
-                        "检索失败或缺省不影响其它结论，并会在详情页如实标注。",
+                    "开启后，赛前情报的联网检索由模型自主完成：是否检索、检索什么、检索几次都由它自己决定，" +
+                        "再据此整理情报。Tavily 由模型发起函数调用、应用真实执行检索；" +
+                        "智谱由模型调用官方内置检索工具。命中的真实来源会随情报保存在本场结果里" +
+                        "（详情页展示、可点击打开）。",
+                    fontSize = 10.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    "模型自主检索不可用时，会自动回退为应用侧按固定词检索一次；" +
+                        "检索失败或无结果不影响其它结论，并会在详情页如实标注。",
+                    Modifier.padding(top = 6.dp),
                     fontSize = 10.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -559,7 +569,7 @@ fun LlmConfigScreen(onBack: () -> Unit) {
                     Text(if (testingSearch) "正在检索…" else "测试检索", fontSize = 13.sp)
                 }
                 Text(
-                    "测试使用固定检索词「$SEARCH_TEST_QUERY」，只验证检索链路是否可用；" +
+                    "测试使用固定检索词「$SEARCH_TEST_QUERY」，只验证直连检索链路（不经过模型）；" +
                         "结果会以底部提示告知成功条数，或原样显示失败原因（含 HTTP 状态码）。",
                     Modifier.padding(top = 8.dp),
                     fontSize = 10.sp,
