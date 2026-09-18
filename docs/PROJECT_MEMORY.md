@@ -115,6 +115,7 @@ ui/screens/     MatchesScreen、SearchScreen、LeagueDetailScreen、DetailScreen
   4. 远端 tip 可能是 API 建的（本地没有该对象）：用「tree sha 相同的本地提交」作为 diff 基线。
 - 结果：本地与远端会是**两个 SHA、同一 tree**（内容逐字节相同）。网络可用时执行
   `git fetch under && git reset --hard under/main` 对齐本地。
+- **仓库内已附可直接使用的推送脚本**：`tools/push_via_api.ps1`（路径自适应、不含任何密钥；用法：设好 `$env:GH_TOKEN` 后在仓库根运行）。
 - 历史遗留：远端曾出现一条**无内容变化**的提交（`0b057a25` → `3472e9a7`），内容无影响，如需清理需强制指针回退。
 
 ---
@@ -139,3 +140,66 @@ ui/screens/     MatchesScreen、SearchScreen、LeagueDetailScreen、DetailScreen
 - [ ] 文案合规：grep 界面字符串无 `AI` / `大模型` / `LLM` / `架构` / `引擎` / 具体模型名
 - [ ] 口径复核：命中红 / 未中绿 / 待结算中性 / 进行中主色；未被点名的数值不再用 `onSurfaceVariant`
 - [ ] 渠道复核：只新增真实数据来源，未编造任何数字或来源
+
+---
+
+## 10. 换机交接清单（新设备如何无缝接上）
+
+### 10.1 从 GitHub 取（仓库已含源码 / APK / 本文档 / 推送脚本）
+
+```
+git clone https://github.com/LingRonghui/Under-control.git
+cd Under-control
+```
+
+- 源码：`jingcai-predict-android/`
+- 签名产物：`dist/jingcai-predict-v0.1.0-release.apk`
+- 推送脚本：`tools/push_via_api.ps1`（`github.com` 不通时用）
+- 若 `github.com` 拉不动，可改走 `api.github.com`（或用代理）
+
+### 10.2 必须**手工拷贝**、且**绝不能上传 GitHub** 的东西
+
+1. **签名密钥**：`C:\Users\Administrator\keystore\jingcai-predict\`（`jingcai-release.jks` + `keystore-info.txt`）
+2. 在 `jingcai-predict-android/` 下**重建 `keystore.properties`**（键名固定，值取上面的 info 文件）：
+
+```
+storeFile=<新设备上 jks 的绝对路径>
+storePassword=<见 keystore-info.txt>
+keyAlias=jingcai
+keyPassword=<见 keystore-info.txt>
+```
+
+   ⚠️ 没有它 `assembleRelease` 会产出**未签名**包，无法覆盖安装升级（`build.gradle.kts` 已做"文件缺失则不签名"的降级）。
+3. **本地环境文件** `jingcai-predict-android/local.properties`（**未入库**，需自行创建）：
+
+```
+sdk.dir=<新设备的 Android SDK 路径>
+```
+
+4. **工具链**：JDK 17、Android SDK（含 platform-tools 的 adb）。本项目本机使用 `C:\dev\jdk17` 与 `C:\dev\android-sdk`，且 **PATH 里没有 java，必须显式设 `JAVA_HOME`**。
+
+### 10.3 应用内数据不随仓库迁移（在新设备上重新配置）
+
+- 模型配置（服务地址 / API Key / 模型名 / 联网检索服务商与 Key）：在「我的 → 模型配置」重新填写并「测试连接」
+- 已保存方案与预测快照：存在设备本地 DataStore，不随仓库走
+
+### 10.4 新设备恢复后的自检命令
+
+```powershell
+$env:JAVA_HOME="C:\dev\jdk17"
+cd jingcai-predict-android
+.\gradlew.bat :app:compileReleaseKotlin --console=plain     # 编译
+.\gradlew.bat :app:assembleRelease --console=plain          # 打包（需 keystore.properties）
+
+$adb="C:\dev\android-sdk\platform-tools\adb.exe"
+& $adb -s emulator-5554 install -r app\build\outputs\apk\release\app-release.apk
+& $adb -s emulator-5554 shell am start -n com.jingcai.predict/.MainActivity
+& $adb -s emulator-5554 shell uiautomator dump /sdcard/v.xml
+& $adb -s emulator-5554 pull /sdcard/v.xml .
+```
+
+校验签名包一致：比对 `dist/` 内 APK 的 SHA-256（当前 `D4B13CD35C663D813875D8547E3E785E838F3185EF518FB7578BC1E67BB95890`）。
+
+### 10.5 关于本地与远端的 SHA 差异
+
+新设备 `git clone` 拿到的**就是远端提交**（tree 与我这台机器逐字节一致，已校验）；我这台上那个 `362b3ec` 只是同内容的本地版本，**无需迁移**。
