@@ -55,14 +55,9 @@ data class AiAnalysis(
     val safest: AiAdvice? = null,
     /** 思路分析分节：市场面 / 基本面 / 风险点 / 结论 */
     val sections: List<Pair<String, String>> = emptyList(),
-    /** 被丢弃的越界选项说明（用于如实告知用户，而不是静默忽略） */
-    val droppedNotes: List<String> = emptyList(),
 ) {
     val ok: Boolean get() = sections.isNotEmpty() || scores.isNotEmpty() || bestValue != null || safest != null
 }
-
-/** AI 请求的失败原因（用于界面如实展示，不做静默降级） */
-data class AiFailure(val message: String)
 
 /** 玩法代码 → 中文名 */
 fun playLabelOf(play: String): String = when (play) {

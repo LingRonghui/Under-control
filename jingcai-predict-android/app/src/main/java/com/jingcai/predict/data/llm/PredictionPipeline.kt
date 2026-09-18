@@ -13,6 +13,9 @@ import com.jingcai.predict.data.remote.PlayerStat
 import com.jingcai.predict.data.remote.RecentTeam
 import com.jingcai.predict.data.remote.RemoteMatch
 import com.jingcai.predict.data.remote.TeamTables
+import com.jingcai.predict.data.search.SearchHit
+import com.jingcai.predict.data.search.WebSearch
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeoutOrNull
@@ -20,22 +23,41 @@ import java.util.Locale
 import kotlin.math.roundToInt
 
 /**
- * 统一预测流水线：**AI 为核心 + 架构为基础，产出一个综合结论**。
+ * 统一预测流水线：**模型判断为核心 + 概率计算为基础，产出一个综合结论**。
  *
  * 分工（红线）：
- * - 架构（本地引擎）负责：真实数据、真实赔率、各选项概率、期望值、置信度口径 —— 全部可复算；
- * - AI 负责：依据上述架构数据做判断（选型、打分、理由、分节分析、赛前情报），AI 不提供任何数字；
- * - 综合结论：选项以 AI 判断为主（无 AI 时用引擎主选），概率/赔率/置信度一律取架构值。
+ * - 本地计算负责：真实数据、真实赔率、各选项概率、期望值、置信度口径 —— 全部可复算；
+ * - 模型负责：依据上述数据做判断（选型、打分、理由、分节分析、赛前情报），模型不提供任何数字；
+ * - 综合结论：选项以模型判断为主（无模型结果时用概率主选），概率/赔率/置信度一律取计算值。
  */
 object PredictionPipeline {
 
     /**
      * 单次模型调用的超时（毫秒）。超时只影响**这一场**的模型部分：
-     * 该场照常产出架构结果并如实标注"模型响应超时"，不会阻塞其它比赛，也不会让页面卡死。
+     * 该场照常产出计算结果并如实标注"模型响应超时"，不会阻塞其它比赛，也不会让页面卡死。
      */
     private const val AI_TIMEOUT_MS = 90_000L
 
-    /** 单场完整预测产物（含引擎与 AI 的融合结果），供详情页 / 分析页 / 后台任务统一使用 */
+    /**
+     * 单场总时长预算（毫秒）：与 [PredictionBatchRunner] 的单场硬超时（180s）对齐。
+     * 官方前瞻抓取、联网检索与两次模型调用**共享**该预算 ——
+     * 联网检索的 20s 上限因此被计入本场预算，模型调用也不会因为检索耗时叠加而撞上外层硬超时。
+     */
+    private const val MATCH_BUDGET_MS = 180_000L
+
+    /** 联网检索的单次超时（毫秒）：上限 20s，与检索客户端的整体超时口径一致 */
+    private const val SEARCH_TIMEOUT_MS = 20_000L
+
+    /** 发起检索时请求的条数（也是落盘来源条数上限） */
+    private const val SEARCH_RESULT_COUNT = 5
+
+    /** 检索词长度上限（字符）：服务商（智谱）要求 search_query ≤ 70 字符 */
+    private const val SEARCH_QUERY_MAX = 70
+
+    /** 一次联网检索的结果与状态（hits 为空时由 state 说明真实原因，绝不补占位数据） */
+    private data class SearchAttempt(val state: String, val hits: List<SearchHit>)
+
+    /** 单场完整预测产物（含计算结果与模型结果的融合），供详情页 / 分析页 / 后台任务统一使用 */
     data class Built(
         val prediction: CombinedPrediction,
         val engine: PredictionResult,
@@ -57,6 +79,15 @@ object PredictionPipeline {
         reviewCount: Int = 0,
         createdAt: Long = System.currentTimeMillis(),
     ): Built = coroutineScope {
+        val startedAt = System.currentTimeMillis()
+        val validCfg = cfg?.takeIf { it.ready }
+
+        // 0) 联网检索（真实网络来源）：与官方前瞻抓取**并发**执行，单次上限 20s；
+        //    检索失败 / 无结果只记录真实状态，绝不阻断本场预测，也绝不伪造来源。
+        val searchJob = validCfg
+            ?.takeIf { it.searchEnabled && withPreview }
+            ?.let { c -> async { runSearch(c, match) } }
+
         // 1) 官方前瞻数据（全部真实接口，逐项失败独立降级）
         val head = async { runCatching { MatchPreviewApi.fetchHead(match.matchId) }.getOrNull() }
         val feature = async { runCatching { MatchPreviewApi.fetchFeature(match.matchId) }.getOrNull() }
@@ -80,10 +111,10 @@ object PredictionPipeline {
         val lv = live.await()
         val hd = head.await()
 
-        // 2) 架构：深度预测
+        // 2) 本地计算：深度预测
         val engine = PredictionEngine.predictDeep(match, profile, f, t, r, h, o)
 
-        // 3) 架构：各玩法全部选项概率 + 真实候选池
+        // 3) 本地计算：各玩法全部选项概率 + 真实候选池
         val probs = if (engine.lambdaHome > 0.0 && engine.lambdaAway > 0.0) {
             OptionProbability.all(
                 engine.lambdaHome,
@@ -100,27 +131,44 @@ object PredictionPipeline {
         // 4) 命中判定（仅已完赛）
         val result = resultOf(match, lv)
 
-        // 5) 前瞻情报 + AI 分析（AI 不可用时如实记录原因）
+        // 5) 前瞻情报 + 模型分析（模型不可用时如实记录原因）
+        //    联网检索结果在此收口：作为真实网络来源拼进情报 prompt（有则允许引用并注明媒体，无则保留禁止联网规则）
+        val searchAttempt = searchJob?.await()
+        val searchHits = searchAttempt?.hits.orEmpty()
+
         var previewErr: String? = null
         var preview = ""
-        val validCfg = cfg?.takeIf { it.ready }
         if (validCfg != null && withPreview) {
-            val r = withTimeoutOrNull(AI_TIMEOUT_MS) {
-                PreviewAnalyzer.generate(validCfg, previewContext(match, hd, f, t, r, h, p, inj, fut, engine))
+            val budget = minOf(AI_TIMEOUT_MS, remainingMs(startedAt))
+            if (budget <= 0L) {
+                previewErr = "单场时长预算已用尽（含联网检索耗时），已按计算结果继续"
+            } else {
+                val r = withTimeoutOrNull(budget) {
+                    PreviewAnalyzer.generate(
+                        validCfg,
+                        previewContext(match, hd, f, t, r, h, p, inj, fut, engine),
+                        searchHits,
+                    )
+                }
+                if (r == null) previewErr = "模型响应超时（${budget / 1000}秒），已按计算结果继续"
+                else r.onSuccess { preview = it }
+                    .onFailure { previewErr = it.message ?: "未知错误" }
             }
-            if (r == null) previewErr = "模型响应超时（${AI_TIMEOUT_MS / 1000}秒），已按架构结果继续"
-            else r.onSuccess { preview = it }
-                .onFailure { previewErr = it.message ?: "未知错误" }
         }
 
         var aiErr: String? = null
         var ai: AiAnalysis? = null
         if (validCfg != null && candidates.isNotEmpty()) {
-            val ctx = aiContext(match, hd, engine, o, t, r, h, inj, p, result, profile, preview)
-            val r2 = withTimeoutOrNull(AI_TIMEOUT_MS) { LlmAnalyzer.analyze(validCfg, ctx, candidates) }
-            if (r2 == null) aiErr = "模型响应超时（${AI_TIMEOUT_MS / 1000}秒），已按架构结果继续"
-            else r2.onSuccess { ai = it }
-                .onFailure { aiErr = it.message ?: "未知错误" }
+            val budget = minOf(AI_TIMEOUT_MS, remainingMs(startedAt))
+            if (budget <= 0L) {
+                aiErr = "单场时长预算已用尽（含联网检索耗时），已按计算结果继续"
+            } else {
+                val ctx = aiContext(match, hd, engine, o, t, r, h, inj, p, result, profile, preview)
+                val r2 = withTimeoutOrNull(budget) { LlmAnalyzer.analyze(validCfg, ctx, candidates) }
+                if (r2 == null) aiErr = "模型响应超时（${budget / 1000}秒），已按计算结果继续"
+                else r2.onSuccess { ai = it }
+                    .onFailure { aiErr = it.message ?: "未知错误" }
+            }
         } else if (validCfg != null) {
             aiErr = "本场无可用真实赔率，未发起模型分析"
         }
@@ -154,9 +202,53 @@ object PredictionPipeline {
             createdAt = createdAt,
             updatedAt = now,
             reviewCount = reviewCount,
+            // 检索状态与命中的真实来源随情报一起落盘（未启用检索时为空）
+            searchState = searchAttempt?.state.orEmpty(),
+            searchSources = searchHits.take(SEARCH_RESULT_COUNT),
         )
         Built(cp, engine, ai, aiErr, previewErr)
     }
+
+    /* ================= 联网检索（真实网络来源） ================= */
+
+    /**
+     * 执行一次联网检索，并把**真实状态**归一到快照口径：
+     * `"ok"`（命中）/ `"empty"`（返回 0 条）/ `"failed:<原因>"`（含 HTTP 状态码与响应体片段）。
+     * 失败只记录原因、不抛异常，**不阻断本场预测**；协程取消继续向上抛出。
+     */
+    private suspend fun runSearch(cfg: LlmConfig, match: RemoteMatch): SearchAttempt {
+        val result = try {
+            withTimeoutOrNull(SEARCH_TIMEOUT_MS) {
+                WebSearch.search(cfg, searchQuery(match), SEARCH_RESULT_COUNT)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return SearchAttempt("failed:${e.message ?: e.javaClass.simpleName}", emptyList())
+        }
+        if (result == null) {
+            return SearchAttempt("failed:检索超时（${SEARCH_TIMEOUT_MS / 1000}秒）", emptyList())
+        }
+        return result.fold(
+            onSuccess = { hits ->
+                if (hits.isEmpty()) SearchAttempt("empty", emptyList())
+                else SearchAttempt("ok", hits.take(SEARCH_RESULT_COUNT))
+            },
+            onFailure = { e -> SearchAttempt("failed:${e.message ?: e.javaClass.simpleName}", emptyList()) },
+        )
+    }
+
+    /** 检索词：只用**真实已有数据**（主队 / 客队 / 联赛名 + 伤停 / 首发），并截断到服务商上限 70 字符 */
+    private fun searchQuery(match: RemoteMatch): String {
+        val raw = listOf(match.home, match.away, match.league, "伤停", "首发")
+            .filter { it.isNotBlank() }
+            .joinToString(" ")
+        return if (raw.length <= SEARCH_QUERY_MAX) raw else raw.take(SEARCH_QUERY_MAX)
+    }
+
+    /** 本场剩余时长预算（毫秒）：抓取 + 检索 + 模型调用共享 [MATCH_BUDGET_MS] */
+    private fun remainingMs(startedAt: Long): Long =
+        (MATCH_BUDGET_MS - (System.currentTimeMillis() - startedAt)).coerceAtLeast(0L)
 
     /* ================= 综合结论 ================= */
 
@@ -178,7 +270,7 @@ object PredictionPipeline {
             val probMap = probs[play] ?: emptyMap()
             val odds = oddsMap[play] ?: emptyMap()
             val score = ai?.scores?.firstOrNull { it.play == play }
-            // AI 判断优先（AI 为核心）；AI 未给出或越界则用引擎主选（架构为基础）
+            // 模型判断优先（模型为核心）；模型未给出或越界则用概率主选（本地计算为基础）
             val aiPick = score?.pick?.takeIf { it.isNotEmpty() && odds.containsKey(it) }
             val option = aiPick ?: enginePick.takeIf { it != "--" }.orEmpty()
             val divergence = aiPick != null && enginePick != "--" && aiPick != enginePick
@@ -210,7 +302,7 @@ object PredictionPipeline {
     ): CombinedPick? {
         val usable = candidates.filter { it.probability > 0.0 }
         if (usable.isEmpty()) return null
-        // 1) 稳健门槛：架构概率 ≥ 45% 且 期望 > 0 —— 排除低概率高赔的投机项
+        // 1) 稳健门槛：模型概率 ≥ 45% 且 期望 > 0 —— 排除低概率高赔的投机项
         val solid = usable.filter { it.probability >= ValueRule.MIN_PROB && it.ev > ValueRule.MIN_EV }
         if (solid.isNotEmpty()) {
             val pick = solid.maxByOrNull { it.probability * it.ev } ?: return null
@@ -255,7 +347,7 @@ object PredictionPipeline {
             confidence = CombineRule.confidence(c.probability, divergence = false, hasAi = sameAsAi),
             alt = picks.firstOrNull { it.play == c.play }?.alt.orEmpty(),
             altOdds = picks.firstOrNull { it.play == c.play }?.altOdds ?: 0.0,
-            // 只有 AI 也推荐同一项时才写理由，避免把别的选项的解释张冠李戴
+            // 只有模型也推荐同一项时才写理由，避免把别的选项的解释张冠李戴
             reason = if (sameAsAi) adv?.reason.orEmpty() else "",
             divergence = false,
             hit = result?.let { hitOf(c.play, c.option, "", it) },
@@ -387,7 +479,7 @@ object PredictionPipeline {
         }
     }
 
-    /** 候选池：只含真实有赔率的选项；概率取引擎值（缺失为 0，绝不猜） */
+    /** 候选池：只含真实有赔率的选项；概率取计算值（缺失为 0，绝不猜） */
     fun buildCandidates(
         oddsMap: Map<String, Map<String, String>>,
         probs: Map<String, Map<String, Double>>,
@@ -465,10 +557,10 @@ object PredictionPipeline {
             if (h.isNotEmpty()) add("${match.home} 后续赛程：${h.take(2).joinToString("；") { "${it.date} ${it.tournament} ${it.home}vs${it.away}" }}")
             if (a.isNotEmpty()) add("${match.away} 后续赛程：${a.take(2).joinToString("；") { "${it.date} ${it.tournament} ${it.home}vs${it.away}" }}")
         }
-        add("架构初步结论：倾向 ${engine.wdlPick}（主胜 ${pct(engine.homeProb)} / 平 ${pct(engine.drawProb)} / 客胜 ${pct(engine.awayProb)}），置信度 ${engine.conf}")
+        add("本地计算初步结论：倾向 ${engine.wdlPick}（主胜 ${pct(engine.homeProb)} / 平 ${pct(engine.drawProb)} / 客胜 ${pct(engine.awayProb)}），置信度 ${engine.conf}")
     }
 
-    /** 喂给预测 AI 的上下文（含前瞻情报全文） */
+    /** 喂给预测模型的上下文（含前瞻情报全文 + 官方数据要点） */
     private fun aiContext(
         match: RemoteMatch,
         head: com.jingcai.predict.data.remote.MatchHead?,
@@ -490,8 +582,8 @@ object PredictionPipeline {
             }
         }
         if (preview.isNotBlank()) add("【前瞻情报（已由官方前瞻数据整理）】\n$preview")
-        add("架构结论：倾向 ${engine.wdlPick}；主胜 ${pct(engine.homeProb)} / 平 ${pct(engine.drawProb)} / 客胜 ${pct(engine.awayProb)}；整体置信度 ${engine.conf}；数据完整度 ${pct(engine.dataComplete)}；采用信号 ${engine.signalNote}")
-        add("架构玩法预测：让球 ${engine.hdpPick}${if (engine.hdpLine.isNotBlank()) "（盘口 ${engine.hdpLine}）" else ""}；比分 ${engine.scorePick}；半全场 ${engine.hfPick}；总进球 ${engine.totalPick}")
+        add("本地计算结论：倾向 ${engine.wdlPick}；主胜 ${pct(engine.homeProb)} / 平 ${pct(engine.drawProb)} / 客胜 ${pct(engine.awayProb)}；整体置信度 ${engine.conf}；数据完整度 ${pct(engine.dataComplete)}；采用信号 ${engine.signalNote}")
+        add("本地计算玩法预测：让球 ${engine.hdpPick}${if (engine.hdpLine.isNotBlank()) "（盘口 ${engine.hdpLine}）" else ""}；比分 ${engine.scorePick}；半全场 ${engine.hfPick}；总进球 ${engine.totalPick}")
         if (engine.lambdaHome > 0.0) {
             add(String.format(Locale.US, "双泊松期望进球：主队 %.2f / 客队 %.2f（联赛基准：场均 %.2f 球、主场优势 %.2f）",
                 engine.lambdaHome, engine.lambdaAway, profile.avgGoals, profile.homeAdv))
@@ -526,12 +618,12 @@ object PredictionPipeline {
             if (hs.isNotBlank()) add("${match.home} 主要射手：$hs")
             if (as_.isNotBlank()) add("${match.away} 主要射手：$as_")
         }
-        if (engine.key.isNotBlank()) add("架构数据要点：${engine.key}")
+        if (engine.key.isNotBlank()) add("本地计算数据要点：${engine.key}")
         result?.let { add("本场已完赛，赛果 ${it.homeScore}:${it.awayScore}") }
         add("约束：选项只能从下方候选池中选择；禁止输出任何赔率数字（系统会用真实赔率回填）；score 为主观把握度（0-100），不是概率。")
     }
 
-    /** AI 不可用时的本地分节分析（结构与 AI 一致，内容全部来自真实数据） */
+    /** 无模型结果时的本地分节分析（结构与模型输出一致，内容全部来自真实数据） */
     private fun localSections(
         match: RemoteMatch,
         engine: PredictionResult,
@@ -543,7 +635,7 @@ object PredictionPipeline {
         probsAvailable: Boolean,
     ): List<Pair<String, String>> {
         val out = mutableListOf<Pair<String, String>>()
-        out += "市场面" to "架构倾向 ${engine.wdlPick}（主胜 ${pct(engine.homeProb)} / 平 ${pct(engine.drawProb)} / 客胜 ${pct(engine.awayProb)}），置信度 ${engine.conf}，采用信号 ${engine.signalNote}。"
+        out += "市场面" to "模型倾向 ${engine.wdlPick}（主胜 ${pct(engine.homeProb)} / 平 ${pct(engine.drawProb)} / 客胜 ${pct(engine.awayProb)}），置信度 ${engine.conf}，采用信号 ${engine.signalNote}。"
         out += "基本面" to buildString {
             tables?.first?.total?.let { if (it.played > 0) append("${match.home} 第${it.ranking}名；") }
             tables?.second?.total?.let { if (it.played > 0) append("${match.away} 第${it.ranking}名；") }
@@ -566,7 +658,7 @@ object PredictionPipeline {
             append("足球偶然性大，以上为概率与赔率的数学结果，不构成投注建议。")
         }
         out += "结论" to buildString {
-            append("架构倾向 ${engine.wdlPick}（置信度 ${engine.conf}）。")
+            append("模型倾向 ${engine.wdlPick}（置信度 ${engine.conf}）。")
             if (engine.hdpPick != "--") append("让球 ${engine.hdpLine.ifEmpty { match.goalLine }} 倾向 ${engine.hdpPick}；")
             if (engine.scorePick != "--") append("最可能比分 ${engine.scorePick}、总进球 ${engine.totalPick}、半全场 ${engine.hfPick}。")
             result?.let { append("本场已完赛（${it.homeScore}:${it.awayScore}）。") }
@@ -592,14 +684,5 @@ object PredictionPipeline {
         "LIVE", "1", "OPEN" -> "进行中"
         "FINISHED", "2", "CLOSED" -> "已完赛"
         else -> status.ifEmpty { "未开赛" }
-    }
-
-    /** 数据指纹：赔率 + 状态变化即视为需要重算（用于避免无谓的二次预测） */
-    fun fingerprint(match: RemoteMatch, odds: MatchOdds?): String {
-        val had = odds?.had?.let { "${it.first.value}_${it.second.value}_${it.third.value}" }
-            ?: match.had?.let { "${it.first}_${it.second}_${it.third}" }.orEmpty()
-        val hhad = odds?.hhad?.let { "${it.first.value}_${it.second.value}_${it.third.value}" }
-            ?: match.hhad?.let { "${it.first}_${it.second}_${it.third}" }.orEmpty()
-        return "${match.status}|$had|$hhad|${odds?.goalLine ?: match.goalLine}"
     }
 }

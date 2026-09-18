@@ -1,6 +1,9 @@
 package com.jingcai.predict.ui.screens
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -16,10 +19,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.CloudOff
+import androidx.compose.material.icons.outlined.SportsSoccer
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -47,7 +50,14 @@ import com.jingcai.predict.data.remote.LeagueApi
 import com.jingcai.predict.data.remote.LeagueDateGroup
 import com.jingcai.predict.data.remote.LeagueEntry
 import com.jingcai.predict.data.remote.LeagueMatch
-import com.jingcai.predict.data.remote.LeagueSeason
+import com.jingcai.predict.ui.components.EmptyState
+import com.jingcai.predict.ui.components.Hairline
+import com.jingcai.predict.ui.components.PillTag
+import com.jingcai.predict.ui.components.SectionTitle
+import com.jingcai.predict.ui.theme.Corner
+import com.jingcai.predict.ui.theme.Space
+import com.jingcai.predict.ui.theme.Tone
+import com.jingcai.predict.ui.theme.tabular
 
 /**
  * 联赛详情页：顶部联赛信息 + 赛季选择 + 按日期分组的赛程赛果（比赛列表）。
@@ -82,7 +92,7 @@ fun LeagueDetailScreen(onBack: () -> Unit) {
         Row(
             Modifier
                 .fillMaxWidth()
-                .padding(start = 4.dp, end = 12.dp, top = 8.dp, bottom = 4.dp),
+                .padding(start = Space.xs, end = Space.lg, top = Space.sm, bottom = Space.xs),
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onBack) {
@@ -90,8 +100,7 @@ fun LeagueDetailScreen(onBack: () -> Unit) {
             }
             Text(
                 league.name.ifEmpty { "联赛详情" },
-                fontSize = 17.sp,
-                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.titleLarge,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -99,21 +108,14 @@ fun LeagueDetailScreen(onBack: () -> Unit) {
 
         // 联赛信息头
         Column(
-            Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+            Modifier.fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.sm),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             LeagueLogo(league.logo, Modifier.size(72.dp))
-            Spacer(Modifier.height(10.dp))
-            Text(league.name.ifEmpty { "未知联赛" }, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(6.dp))
-            Box(
-                Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(Color(0xFF7C3AED).copy(alpha = 0.12f))
-                    .padding(horizontal = 10.dp, vertical = 3.dp)
-            ) {
-                Text("联赛", fontSize = 11.sp, color = Color(0xFF7C3AED), fontWeight = FontWeight.Medium)
-            }
+            Spacer(Modifier.height(Space.md))
+            Text(league.name.ifEmpty { "未知联赛" }, style = MaterialTheme.typography.headlineSmall)
+            Spacer(Modifier.height(Space.sm))
+            PillTag(text = "联赛", color = LeagueAccent)
         }
 
         // 赛季选择
@@ -122,27 +124,41 @@ fun LeagueDetailScreen(onBack: () -> Unit) {
                 Modifier
                     .fillMaxWidth()
                     .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 16.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    .padding(horizontal = Space.lg, vertical = Space.sm),
+                horizontalArrangement = Arrangement.spacedBy(Space.sm)
             ) {
                 league.seasons.forEach { s ->
                     val selected = s.seasonId == seasonId
+                    val chipBg by animateColorAsState(
+                        targetValue = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+                        else Tone.fill(),
+                        animationSpec = tween(180),
+                        label = "seasonBg"
+                    )
+                    val chipFg by animateColorAsState(
+                        targetValue = if (selected) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        animationSpec = tween(180),
+                        label = "seasonFg"
+                    )
                     Box(
                         Modifier
-                            .clip(RoundedCornerShape(20.dp))
-                            .background(
-                                if (selected) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                            .clip(Corner.pill)
+                            .background(chipBg)
+                            .border(
+                                1.dp,
+                                if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.30f)
+                                else Tone.hairline(),
+                                Corner.pill
                             )
                             .clickable { seasonId = s.seasonId }
-                            .padding(horizontal = 14.dp, vertical = 6.dp)
+                            .padding(horizontal = Space.md, vertical = 6.dp)
                     ) {
                         Text(
                             s.seasonName,
-                            fontSize = 12.sp,
+                            style = MaterialTheme.typography.labelLarge,
                             fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                            color = if (selected) MaterialTheme.colorScheme.onPrimary
-                            else MaterialTheme.colorScheme.onSurfaceVariant
+                            color = chipFg
                         )
                     }
                 }
@@ -155,85 +171,79 @@ fun LeagueDetailScreen(onBack: () -> Unit) {
                 loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-                        Spacer(Modifier.height(12.dp))
-                        Text("正在加载赛程赛果…", fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.height(Space.md))
+                        Text(
+                            "正在加载赛程赛果…",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
 
-                failed -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("赛程赛果加载失败", fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(Modifier.height(8.dp))
+                failed -> EmptyState(
+                    icon = Icons.Outlined.CloudOff,
+                    title = "赛程赛果加载失败",
+                    modifier = Modifier.align(Alignment.Center).padding(horizontal = Space.lg),
+                    action = {
                         TextButton(onClick = {
                             loading = true
                             failed = false
                             groups = null
-                        }) { Text("重试") }
+                        }) {
+                            Text("重试", style = MaterialTheme.typography.labelLarge)
+                        }
                     }
-                }
+                )
 
-                groups.isNullOrEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("该联赛暂无赛程赛果", fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+                groups.isNullOrEmpty() -> EmptyState(
+                    icon = Icons.Outlined.SportsSoccer,
+                    title = "该联赛暂无赛程赛果",
+                    modifier = Modifier.align(Alignment.Center).padding(horizontal = Space.lg)
+                )
 
                 else -> {
                     val g = groups.orEmpty()
                     LazyColumn(
-                    Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(0.dp)
-                ) {
-                    items(g.size, key = { "g_${g[it].matchDate}" }) { gi ->
-                        val group = g[gi]
-                        // 日期分组头
-                        Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .background(MaterialTheme.colorScheme.background)
-                                .padding(horizontal = 16.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                formatDate(group.matchDate),
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
+                        Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(0.dp)
+                    ) {
+                        items(g.size, key = { "g_${g[it].matchDate}_$it" }) { gi ->
+                            val group = g[gi]
+                            // 日期分组头
+                            SectionTitle(
+                                title = formatDate(group.matchDate),
+                                modifier = Modifier.padding(
+                                    start = Space.lg,
+                                    end = Space.lg,
+                                    top = Space.section,
+                                    bottom = Space.xs
+                                ),
+                                trailing = {
+                                    if (group.isToday) {
+                                        PillTag(
+                                            text = "今天",
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                }
                             )
-                            if (group.isToday) {
-                                Spacer(Modifier.width(8.dp))
-                                Box(
-                                    Modifier
-                                        .clip(RoundedCornerShape(6.dp))
-                                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f))
-                                        .padding(horizontal = 8.dp, vertical = 2.dp)
-                                ) {
-                                    Text("今天", fontSize = 10.sp, color = MaterialTheme.colorScheme.primary,
-                                        fontWeight = FontWeight.Bold)
+                            group.matches.forEachIndexed { mi, m ->
+                                LeagueMatchRow(m)
+                                if (mi != group.matches.lastIndex) {
+                                    Hairline(startPadding = Space.lg, endPadding = Space.lg)
                                 }
                             }
                         }
-                        group.matches.forEachIndexed { mi, m ->
-                            LeagueMatchRow(m)
-                            if (mi != group.matches.lastIndex) {
-                                Box(
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .padding(start = 16.dp)
-                                        .height(0.5.dp)
-                                        .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
-                                )
-                            }
-                        }
+                        item(key = "bottom") { Spacer(Modifier.height(Space.lg)) }
                     }
-                    item(key = "bottom") { Spacer(Modifier.height(16.dp)) }
-                }
                 }
             }
         }
     }
 }
+
+/** 联赛专属强调色（与搜索页保持一致） */
+private val LeagueAccent = Color(0xFF7C3AED)
 
 /** 默认选中赛季：优先当前赛季（名称含今年），否则取最后一个 */
 private fun defaultSeasonId(league: LeagueEntry): String {
@@ -266,17 +276,21 @@ private fun LeagueMatchRow(m: LeagueMatch) {
     Column(
         Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 9.dp)
+            .padding(horizontal = Space.lg, vertical = Space.md)
     ) {
         if (info.isNotEmpty()) {
-            Text(info, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.height(6.dp))
+            Text(
+                info,
+                style = MaterialTheme.typography.labelSmall.tabular(),
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
+            )
+            Spacer(Modifier.height(Space.sm))
         }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(
                 m.home,
                 Modifier.weight(1f),
-                fontSize = 14.sp,
+                style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -284,26 +298,24 @@ private fun LeagueMatchRow(m: LeagueMatch) {
             )
             Box(
                 Modifier
-                    .padding(horizontal = 12.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(
-                        if (m.isScore) MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
-                        else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
-                    )
-                    .padding(horizontal = 12.dp, vertical = 5.dp)
+                    .padding(horizontal = Space.md)
+                    .clip(Corner.sm)
+                    .background(Tone.fill())
+                    .padding(horizontal = Space.md, vertical = 5.dp)
             ) {
                 Text(
                     if (m.isScore) "$homeScore : $awayScore" else "VS",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (m.isScore) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.onSurfaceVariant
+                    style = MaterialTheme.typography.bodyLarge
+                        .copy(fontWeight = FontWeight.Bold).tabular(),
+                    color = if (m.isScore) MaterialTheme.colorScheme.onSurface
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1
                 )
             }
             Text(
                 m.away,
                 Modifier.weight(1f),
-                fontSize = 14.sp,
+                style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -311,12 +323,16 @@ private fun LeagueMatchRow(m: LeagueMatch) {
             )
             // 半场比分
             if (m.isScore && m.halfScore.isNotBlank()) {
-                Spacer(Modifier.width(10.dp))
+                Spacer(Modifier.width(Space.sm))
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("半场", fontSize = 8.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        "半场",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    )
                     Text(
                         m.halfScore,
-                        fontSize = 9.sp,
+                        style = MaterialTheme.typography.labelSmall.tabular(),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontWeight = FontWeight.Medium
                     )
@@ -331,8 +347,8 @@ private fun LeagueMatchRow(m: LeagueMatch) {
 private fun LeagueLogo(url: String, modifier: Modifier = Modifier) {
     Box(
         modifier
-            .clip(RoundedCornerShape(16.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant),
+            .clip(Corner.md)
+            .background(Tone.fill()),
         contentAlignment = Alignment.Center
     ) {
         if (url.isNotEmpty()) {

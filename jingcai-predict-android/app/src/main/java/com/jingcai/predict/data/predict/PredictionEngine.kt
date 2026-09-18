@@ -19,10 +19,6 @@ import kotlin.math.roundToInt
  */
 object PredictionEngine {
 
-    /** 轻量预测：仅市场赔率信号（综合信心榜用，覆盖全部比赛，零额外请求） */
-    fun predictLight(match: RemoteMatch, profile: LeagueProfile): PredictionResult =
-        runPrediction(match, profile, null, null, null, null, null)
-
     /** 深度预测：三路信号完整融合（详情页用，需先并行拉取官方前瞻数据） */
     fun predictDeep(
         match: RemoteMatch,

@@ -59,13 +59,29 @@ import com.jingcai.predict.data.llm.LlmConfig
 import com.jingcai.predict.data.llm.LlmConfigStore
 import com.jingcai.predict.data.llm.LlmPresets
 import com.jingcai.predict.data.llm.LlmProvider
+import com.jingcai.predict.data.search.WebSearch
+import com.jingcai.predict.ui.components.SegmentedTabs
 import com.jingcai.predict.ui.components.UiMessage
 import java.util.Locale
 import kotlinx.coroutines.launch
 
 /**
- * 大模型配置页：选择服务预设、填写接口地址 / API Key / 模型名，
+ * 「测试检索」使用的固定检索词：只用于验证检索链路是否通（与任何具体比赛无关），
+ * 不包含任何被虚构的数据。
+ */
+private const val SEARCH_TEST_QUERY = "足球 赛前 伤停 首发 情报"
+
+/** 联网检索的三选一（取值 → 展示文案；“关闭”对应 LlmConfig.SEARCH_OFF） */
+private val SEARCH_PROVIDER_OPTIONS = listOf(
+    LlmConfig.SEARCH_OFF to "关闭",
+    LlmConfig.SEARCH_ZHIPU to "智谱",
+    LlmConfig.SEARCH_TAVILY to "Tavily",
+)
+
+/**
+ * 模型配置页：选择服务预设、填写接口地址 / API Key / 模型名，
  * 支持从接口拉取真实模型列表、测试连通性，并把配置保存在本机（DataStore）。
+ * 另含「联网检索」配置：关闭 / 智谱（复用上方 Key）/ Tavily，并可用固定检索词实测检索链路。
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -82,6 +98,12 @@ fun LlmConfigScreen(onBack: () -> Unit) {
     var showKey by remember { mutableStateOf(false) }
     var selectedPresetId by remember { mutableStateOf<String?>(null) }
 
+    // 联网检索配置
+    var searchProvider by remember { mutableStateOf(LlmConfig.SEARCH_OFF) }
+    var tavilyKey by remember { mutableStateOf("") }
+    var showTavilyKey by remember { mutableStateOf(false) }
+    var testingSearch by remember { mutableStateOf(false) }
+
     // 拉取模型列表的状态
     var modelOptions by remember { mutableStateOf<List<String>>(emptyList()) }
     var loadingModels by remember { mutableStateOf(false) }
@@ -92,13 +114,15 @@ fun LlmConfigScreen(onBack: () -> Unit) {
     var testOk by remember { mutableStateOf<String?>(null) }
     var testError by remember { mutableStateOf<String?>(null) }
 
-    // 组装当前输入对应的配置
+    // 组装当前输入对应的配置（新增字段一并带上，避免漏字段）
     fun buildConfig() = LlmConfig(
         baseUrl = baseUrl.trim(),
         apiKey = apiKey.trim(),
         model = model.trim(),
         enabled = enabled,
         bankroll = bankrollText.trim().toDoubleOrNull() ?: 100.0,
+        searchProvider = searchProvider,
+        tavilyKey = tavilyKey.trim(),
     )
 
     LaunchedEffect(Unit) {
@@ -108,6 +132,8 @@ fun LlmConfigScreen(onBack: () -> Unit) {
         model = cfg.model
         enabled = cfg.enabled
         bankrollText = bankrollTextOf(cfg.bankroll)
+        searchProvider = cfg.searchProvider
+        tavilyKey = cfg.tavilyKey
         // 已保存的地址能对上某个预设时，高亮该预设
         selectedPresetId = LlmPresets
             .firstOrNull { it.baseUrl.isNotBlank() && it.baseUrl == cfg.baseUrl.trim().trimEnd('/') }
@@ -176,6 +202,40 @@ fun LlmConfigScreen(onBack: () -> Unit) {
         }
     }
 
+    // 测试检索：用固定检索词真实调用一次检索接口；成功显示返回条数，失败如实回显原始原因
+    fun testSearch() {
+        val cfg = buildConfig()
+        if (cfg.searchProvider.isBlank()) {
+            UiMessage.error("请先选择检索服务商（智谱 或 Tavily）")
+            return
+        }
+        if (cfg.searchProvider == LlmConfig.SEARCH_ZHIPU && cfg.apiKey.isBlank()) {
+            UiMessage.error("智谱检索复用上方 API Key，请先填写 API Key")
+            return
+        }
+        if (cfg.searchProvider == LlmConfig.SEARCH_TAVILY && cfg.tavilyKey.isBlank()) {
+            UiMessage.error("请先填写 Tavily API Key")
+            return
+        }
+        testingSearch = true
+        scope.launch {
+            val result = WebSearch.search(cfg, SEARCH_TEST_QUERY, WebSearch.DEFAULT_COUNT)
+            testingSearch = false
+            result.fold(
+                onSuccess = { hits ->
+                    if (hits.isEmpty()) {
+                        UiMessage.error("本次未获取到网络检索结果（接口返回成功，但结果为空）")
+                    } else {
+                        UiMessage.success("检索成功：返回 ${hits.size} 条结果")
+                    }
+                },
+                onFailure = { e ->
+                    UiMessage.error("检索失败：${e.message ?: "接口未返回错误信息"}")
+                }
+            )
+        }
+    }
+
     // 保存当前配置
     fun saveConfig() {
         val cfg = buildConfig()
@@ -196,6 +256,9 @@ fun LlmConfigScreen(onBack: () -> Unit) {
         enabled = true
         bankrollText = "100"
         selectedPresetId = null
+        searchProvider = LlmConfig.SEARCH_OFF
+        tavilyKey = ""
+        showTavilyKey = false
         modelOptions = emptyList()
         modelsError = null
         testOk = null
@@ -263,7 +326,7 @@ fun LlmConfigScreen(onBack: () -> Unit) {
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri)
                 )
                 Text(
-                    "兼容主流大模型接口，实际请求 {地址}/chat/completions 与 {地址}/models",
+                    "兼容主流模型接口，实际请求 {地址}/chat/completions 与 {地址}/models",
                     Modifier.padding(top = 6.dp),
                     fontSize = 10.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -396,13 +459,13 @@ fun LlmConfigScreen(onBack: () -> Unit) {
                 }
             }
 
-            // 6) 启用 AI 分析
+            // 6) 启用模型分析
             SectionCard("模型分析") {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("启用模型分析", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                         Text(
-                            "关闭后不再向大模型发起请求",
+                            "关闭后不再向模型发起请求",
                             fontSize = 10.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -417,7 +480,94 @@ fun LlmConfigScreen(onBack: () -> Unit) {
                 }
             }
 
-            // 7) 参考本金
+            // 7) 联网检索
+            SectionCard("联网检索") {
+                Text(
+                    "开启后，生成赛前情报前会先向所选服务商发起一次真实网络检索；" +
+                        "命中的来源会随情报保存在本场结果里（详情页展示、可点击打开）。" +
+                        "检索失败或缺省不影响其它结论，并会在详情页如实标注。",
+                    fontSize = 10.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                SegmentedTabs(
+                    items = SEARCH_PROVIDER_OPTIONS.map { it.second },
+                    selectedIndex = SEARCH_PROVIDER_OPTIONS
+                        .indexOfFirst { it.first == searchProvider }
+                        .coerceAtLeast(0),
+                    onSelect = { index ->
+                        searchProvider = SEARCH_PROVIDER_OPTIONS.getOrNull(index)?.first
+                            ?: LlmConfig.SEARCH_OFF
+                    },
+                    modifier = Modifier.padding(top = 10.dp)
+                )
+                Text(
+                    "智谱检索复用上方「API Key」（智谱开放平台同一个 Key，无需另填）；" +
+                        "Tavily 需要使用单独的 Tavily API Key。",
+                    Modifier.padding(top = 8.dp),
+                    fontSize = 10.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                if (searchProvider == LlmConfig.SEARCH_TAVILY) {
+                    OutlinedTextField(
+                        value = tavilyKey,
+                        onValueChange = { tavilyKey = it },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 10.dp),
+                        placeholder = { Text("粘贴 Tavily API Key（tvly- 开头）", fontSize = 13.sp) },
+                        singleLine = true,
+                        shape = RoundedCornerShape(14.dp),
+                        colors = fieldColors(),
+                        visualTransformation = if (showTavilyKey) VisualTransformation.None
+                        else PasswordVisualTransformation(),
+                        trailingIcon = {
+                            IconButton(onClick = { showTavilyKey = !showTavilyKey }) {
+                                Icon(
+                                    if (showTavilyKey) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+                                    contentDescription = if (showTavilyKey) "隐藏" else "显示",
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                    )
+                    Text(
+                        "在 tavily.com 注册并登录后，可在个人控制台获取 API Key（有免费额度，形如 tvly-...）；" +
+                            "Key 仅保存在本机（未加密）。",
+                        Modifier.padding(top = 6.dp),
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                Button(
+                    onClick = { testSearch() },
+                    enabled = !testingSearch,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 10.dp),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    if (testingSearch) {
+                        CircularProgressIndicator(
+                            Modifier.size(14.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
+                        Spacer(Modifier.width(6.dp))
+                    }
+                    Text(if (testingSearch) "正在检索…" else "测试检索", fontSize = 13.sp)
+                }
+                Text(
+                    "测试使用固定检索词「$SEARCH_TEST_QUERY」，只验证检索链路是否可用；" +
+                        "结果会以底部提示告知成功条数，或原样显示失败原因（含 HTTP 状态码）。",
+                    Modifier.padding(top = 8.dp),
+                    fontSize = 10.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            // 8) 参考本金
             SectionCard("参考本金（元）") {
                 OutlinedTextField(
                     value = bankrollText,
@@ -447,7 +597,7 @@ fun LlmConfigScreen(onBack: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            // 8) 底部按钮
+            // 9) 底部按钮
             Row(
                 Modifier
                     .fillMaxWidth()

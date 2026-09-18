@@ -43,13 +43,6 @@ data class BatchState(
 object PredictionBatchRunner {
 
     /**
-     * ⚠️⚠️ 测试阀门（交付前保留，交付时改为 0 即解除限制）⚠️⚠️
-     * 0 = 不限制（正式行为：今明两日全部比赛）；
-     * N > 0 = 只预测「开赛时间最早的前 N 场」未开赛比赛，用于测试阶段节省调用成本。
-     */
-    private const val TEST_LIMIT = 3
-
-    /**
      * 单场预测的硬超时（毫秒）：超过即判定该场失败并跳过，
      * 保证**任何一场卡住都不会拖住整批**，也不会让界面一直转圈。
      */
@@ -137,9 +130,9 @@ object PredictionBatchRunner {
                 val d = runCatching { LocalDate.parse(date) }.getOrNull()
                 d == null || d == today || d == tomorrow
             }
-            // 最近 = 开赛时间最早，保证阀门打开的永远是"最近的几场"
+            // 按开赛时间升序：最早开赛的排在前面
             .sortedBy { it.time }
-        return if (TEST_LIMIT > 0) list.take(TEST_LIMIT) else list
+        return list
     }
 
     private suspend fun predictAll(context: Context, matches: List<RemoteMatch>) {

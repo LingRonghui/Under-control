@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.jingcai.predict.data.search.SearchHit
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -83,6 +84,9 @@ object AiPredictionStore {
 
     /* ---------- 序列化 ---------- */
 
+    /** 落盘的检索摘要上限（字符）：检索摘要仅用于展示与溯源，截断以控制快照体积 */
+    private const val SOURCE_SNIPPET_MAX = 300
+
     private fun pickJson(p: CombinedPick): JSONObject = JSONObject().apply {
         put("play", p.play)
         put("playLabel", p.playLabel)
@@ -146,6 +150,23 @@ object AiPredictionStore {
                     put("createdAt", c.createdAt)
                     put("updatedAt", c.updatedAt)
                     put("reviewCount", c.reviewCount)
+                    put("searchState", c.searchState)
+                    put(
+                        "searchSources",
+                        JSONArray().apply {
+                            c.searchSources.forEach { h ->
+                                put(
+                                    JSONObject().apply {
+                                        put("title", h.title)
+                                        put("url", h.url)
+                                        put("source", h.source)
+                                        put("publishDate", h.publishDate)
+                                        put("snippet", h.snippet.take(SOURCE_SNIPPET_MAX))
+                                    }
+                                )
+                            }
+                        }
+                    )
                     put("logicVersion", c.logicVersion)
                 }
             )
@@ -158,6 +179,8 @@ object AiPredictionStore {
             val o = arr.optJSONObject(i) ?: return@mapNotNull null
             val picks = o.optJSONArray("picks") ?: JSONArray()
             val sections = o.optJSONArray("sections") ?: JSONArray()
+            // 旧版本快照没有 searchSources / searchState：按「未启用、无来源」处理（向后兼容，不崩）
+            val searchSources = o.optJSONArray("searchSources") ?: JSONArray()
             CombinedPrediction(
                 matchId = o.optString("matchId", ""),
                 matchNum = o.optString("matchNum", ""),
@@ -184,6 +207,20 @@ object AiPredictionStore {
                 createdAt = o.optLong("createdAt", 0L),
                 updatedAt = o.optLong("updatedAt", 0L),
                 reviewCount = o.optInt("reviewCount", 0),
+                searchState = o.optString("searchState", ""),
+                searchSources = (0 until searchSources.length()).mapNotNull { j ->
+                    val s = searchSources.optJSONObject(j) ?: return@mapNotNull null
+                    val url = s.optString("url", "")
+                    val title = s.optString("title", "")
+                    if (url.isEmpty() && title.isEmpty()) return@mapNotNull null
+                    SearchHit(
+                        title = title,
+                        url = url,
+                        snippet = s.optString("snippet", ""),
+                        source = s.optString("source", ""),
+                        publishDate = s.optString("publishDate", ""),
+                    )
+                },
                 logicVersion = o.optInt("logicVersion", 0),
             )
         }

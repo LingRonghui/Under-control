@@ -25,20 +25,4 @@ object OddsMath {
         val p = impliedProb(listOf(home, draw, away))
         return Triple(p[0], p[1], p[2])
     }
-
-    /**
-     * 从赔率列表取市场最看好方向：最低赔率项。
-     * @return (索引, 赔率)；无有效赔率时返回 null
-     */
-    fun minIndex(odds: List<Double>): Pair<Int, Double>? {
-        var idx = -1
-        var min = Double.MAX_VALUE
-        odds.forEachIndexed { i, o ->
-            if (o > 1.0 && o < min) {
-                min = o
-                idx = i
-            }
-        }
-        return if (idx >= 0) idx to min else null
-    }
 }

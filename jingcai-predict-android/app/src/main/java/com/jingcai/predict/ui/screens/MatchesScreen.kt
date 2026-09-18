@@ -1,11 +1,14 @@
 package com.jingcai.predict.ui.screens
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -16,10 +19,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.SportsSoccer
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -41,9 +45,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.jingcai.predict.data.MatchInfo
@@ -53,6 +59,15 @@ import com.jingcai.predict.data.remote.LiveMatchBrief
 import com.jingcai.predict.data.remote.MatchPreviewApi
 import com.jingcai.predict.data.remote.RemoteMatch
 import com.jingcai.predict.data.remote.ResultBrief
+import com.jingcai.predict.ui.components.EmptyState
+import com.jingcai.predict.ui.components.PillTag
+import com.jingcai.predict.ui.components.SectionTitle
+import com.jingcai.predict.ui.components.SegmentedTabs
+import com.jingcai.predict.ui.components.SurfaceCard
+import com.jingcai.predict.ui.theme.Corner
+import com.jingcai.predict.ui.theme.Space
+import com.jingcai.predict.ui.theme.Tone
+import com.jingcai.predict.ui.theme.tabular
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -117,7 +132,6 @@ fun MatchesScreen(
                     id = b.matchId,
                     num = b.num,
                     league = b.league,
-                    round = "",
                     kickoff = b.matchTime,
                     home = b.home,
                     away = b.away,
@@ -206,72 +220,76 @@ fun MatchesScreen(
         Row(
             Modifier
                 .fillMaxWidth()
-                .padding(start = 14.dp, end = 14.dp, top = 12.dp),
+                .padding(start = Space.lg, end = Space.lg, top = Space.md),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
                 Modifier
                     .size(26.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(MaterialTheme.colorScheme.primary),
+                    .clip(Corner.sm)
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(
+                                MaterialTheme.colorScheme.primary,
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.72f)
+                            )
+                        )
+                    ),
                 contentAlignment = Alignment.Center
             ) {
-                Text("⚡", fontSize = 14.sp)
+                Text("⚡", fontSize = 13.sp, color = MaterialTheme.colorScheme.onPrimary)
             }
             Text(
                 "Under Control",
-                Modifier.padding(start = 8.dp),
-                fontSize = 17.sp,
-                fontWeight = FontWeight.Bold
+                Modifier.padding(start = Space.sm),
+                style = MaterialTheme.typography.titleLarge
             )
             Spacer(Modifier.weight(1f))
             Row(
                 Modifier
-                    .clip(RoundedCornerShape(999.dp))
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f))
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                    .clip(Corner.pill)
+                    .background(Tone.fill())
+                    .border(1.dp, Tone.hairline(), Corner.pill)
+                    .padding(horizontal = Space.sm, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Box(
                     Modifier
-                        .size(7.dp)
+                        .size(6.dp)
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.primary)
                 )
                 Text(
-                    " 今日 $todayCount 场",
-                    fontSize = 11.sp,
+                    "今日 $todayCount 场",
+                    Modifier.padding(start = 5.dp),
+                    style = MaterialTheme.typography.labelSmall.tabular(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
 
-        // 搜索框
+        // 搜索框：胶囊入口（点击进入搜索页）
         Row(
             Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 10.dp)
-                .clip(RoundedCornerShape(14.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant)
-                .border(
-                    1.dp,
-                    MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
-                    RoundedCornerShape(14.dp)
-                )
+                .padding(horizontal = Space.lg, vertical = Space.md)
+                .clip(Corner.pill)
+                .background(Tone.fill())
+                .border(1.dp, Tone.hairline(), Corner.pill)
                 .clickable { onSearchClick() }
-                .padding(horizontal = 12.dp, vertical = 10.dp),
+                .padding(horizontal = Space.md, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
                 Icons.Outlined.Search,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(18.dp)
+                modifier = Modifier.size(17.dp)
             )
             Text(
                 "搜索联赛 / 比赛",
-                Modifier.padding(start = 8.dp),
-                fontSize = 14.sp,
+                Modifier.padding(start = Space.sm),
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
@@ -280,37 +298,12 @@ fun MatchesScreen(
         val favAll = (upcoming + liveList + finishedList).filter { it.id in favIds }
         val tabs = listOf("未开始", "进行中", "已结束", "收藏")
         val counts = listOf(upcoming.size, liveList.size, finishedList.size, favAll.size)
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 4.dp)
-        ) {
-            tabs.forEachIndexed { i, name ->
-                val selected = tab == i
-                Row(
-                    Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(10.dp))
-                        .clickable { tab = i }
-                        .padding(vertical = 9.dp),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        name,
-                        fontSize = 14.sp,
-                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                        color = if (selected) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        " ${counts[i]}",
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        }
+        SegmentedTabs(
+            items = tabs.mapIndexed { i, name -> "$name ${counts[i]}" },
+            selectedIndex = tab,
+            onSelect = { tab = it },
+            modifier = Modifier.padding(horizontal = Space.lg, vertical = Space.xs)
+        )
 
         // 比赛列表：官方数据 + 下拉刷新
         val noData = upcoming.isEmpty() && liveList.isEmpty() && finishedList.isEmpty()
@@ -318,24 +311,27 @@ fun MatchesScreen(
             loading && noData -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-                    Spacer(Modifier.height(12.dp))
-                    Text("正在加载竞彩赛事…", fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(Space.md))
+                    Text(
+                        "正在加载竞彩赛事…",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
 
             failed && noData -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("数据加载失败", fontSize = 14.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.height(6.dp))
-                    Text("请检查网络后下拉重试", fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
-                    Spacer(Modifier.height(16.dp))
-                    Button(onClick = { load(false) }, shape = RoundedCornerShape(10.dp)) {
-                        Text("重新加载", fontSize = 13.sp)
+                EmptyState(
+                    icon = Icons.Outlined.CloudOff,
+                    title = "数据加载失败",
+                    description = "请检查网络后下拉重试",
+                    modifier = Modifier.padding(horizontal = Space.lg),
+                    action = {
+                        Button(onClick = { load(false) }, shape = Corner.sm) {
+                            Text("重新加载", style = MaterialTheme.typography.labelLarge)
+                        }
                     }
-                }
+                )
             }
 
             else -> PullToRefreshBox(
@@ -346,30 +342,24 @@ fun MatchesScreen(
                 LazyColumn(
                     Modifier
                         .fillMaxSize()
-                        .padding(bottom = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                        .padding(bottom = Space.md),
+                    verticalArrangement = Arrangement.spacedBy(Space.sm)
                 ) {
                     if (counts.getOrElse(tab) { 0 } == 0) {
                         item {
-                            Box(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 60.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    when (tab) {
-                                        0 -> "暂无未开始的竞彩赛事"
-                                        1 -> "当前没有进行中的比赛"
-                                        2 -> "今日暂无已结束的比赛"
-                                        else -> "暂无收藏比赛\n点击比赛卡片旁的星标即可收藏"
-                                    },
-                                    fontSize = 13.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    lineHeight = 22.sp,
-                                    textAlign = TextAlign.Center
-                                )
+                            val emptyIcon =
+                                if (tab == 3) Icons.Outlined.StarBorder else Icons.Outlined.SportsSoccer
+                            val emptyTitle = when (tab) {
+                                0 -> "暂无未开始的竞彩赛事"
+                                1 -> "当前没有进行中的比赛"
+                                2 -> "今日暂无已结束的比赛"
+                                else -> "暂无收藏比赛"
                             }
+                            EmptyState(
+                                icon = emptyIcon,
+                                title = emptyTitle,
+                                description = if (tab == 3) "点击比赛卡片旁的星标即可收藏" else null
+                            )
                         }
                     }
 
@@ -426,11 +416,10 @@ fun MatchesScreen(
                             "下拉可刷新",
                             Modifier
                                 .fillMaxWidth()
-                                .padding(top = 18.dp),
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center,
-                            lineHeight = 18.sp
+                                .padding(top = Space.xl),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                            textAlign = TextAlign.Center
                         )
                     }
                 }
@@ -442,31 +431,22 @@ fun MatchesScreen(
 /** 分组标题：未开始按日期分组，其余按联赛分组 */
 @Composable
 private fun GroupHeader(title: String, count: Int) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(start = 14.dp, end = 14.dp, top = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            Modifier
-                .size(7.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primary)
-        )
-        Text(
-            " $title",
-            Modifier.padding(start = 4.dp),
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Bold
-        )
-        Spacer(Modifier.weight(1f))
-        Text(
-            "${count}场",
-            fontSize = 11.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
+    SectionTitle(
+        title = title,
+        modifier = Modifier.padding(
+            start = Space.lg,
+            end = Space.lg,
+            top = Space.section,
+            bottom = Space.xs
+        ),
+        trailing = {
+            Text(
+                "$count 场",
+                style = MaterialTheme.typography.labelSmall.tabular(),
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    )
 }
 
 /** 竞彩官方比赛数据 → 界面比赛模型 */
@@ -494,7 +474,6 @@ private fun RemoteMatch.toMatchInfo(): MatchInfo {
         id = matchId,
         num = num,
         league = league,
-        round = "",
         kickoff = time.substringAfter(' ', time).take(5),   // "2026-09-18 02:30:00" → "02:30"
         home = home,
         away = away,
@@ -512,7 +491,6 @@ private fun ResultBrief.toMatchInfo(): MatchInfo = MatchInfo(
     id = matchId,
     num = num,
     league = league,
-    round = "",
     kickoff = matchTime,
     home = home,
     away = away,
@@ -533,145 +511,167 @@ private fun MatchCard(
     onClick: () -> Unit,
     showLeague: Boolean = false,
 ) {
-    Row(
-        Modifier
-            .alpha(if (match.status == MatchStatus.FINISHED) 0.5f else 1f)
-            .fillMaxWidth()
-            .padding(horizontal = 14.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(MaterialTheme.colorScheme.surface)
-            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f), RoundedCornerShape(14.dp))
-            .clickable(onClick = onClick)
-            .padding(start = 12.dp, top = 11.dp, bottom = 11.dp, end = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
+    val live = match.status == MatchStatus.LIVE
+    val favTint by animateColorAsState(
+        targetValue = if (faved) MaterialTheme.colorScheme.primary
+        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+        animationSpec = tween(180),
+        label = "favTint"
+    )
+    SurfaceCard(
+        modifier = Modifier
+            .padding(horizontal = Space.lg)
+            .alpha(if (match.status == MatchStatus.FINISHED) 0.86f else 1f),
+        onClick = onClick,
+        contentPadding = PaddingValues(
+            start = Space.md,
+            end = Space.xs,
+            top = Space.md,
+            bottom = Space.md
+        )
     ) {
-        // 左：编号 / 时间 / 状态
-        Column(Modifier.width(62.dp)) {
-            Text(match.num, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(
-                match.kickoff,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            StatusChip(match)
-        }
-        // 中：球队（进行中/已完赛时，各队比分放在球队名右边，一上一下）
-        val scoreParts = if (match.status != MatchStatus.UPCOMING && match.score != null)
-            match.score!!.split(":", limit = 2) else null
-        Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
-            // 按日期分组的列表没有联赛表头，联赛名放在卡片内
-            if (showLeague) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            // 左：编号 / 开赛时间 / 状态
+            Column(Modifier.width(58.dp)) {
                 Text(
-                    match.league,
-                    Modifier.padding(bottom = 3.dp),
-                    fontSize = 9.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    match.num,
+                    style = MaterialTheme.typography.labelSmall.tabular(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
                     maxLines = 1
                 )
+                Spacer(Modifier.height(Space.xxs))
+                Text(
+                    match.kickoff,
+                    style = MaterialTheme.typography.titleSmall
+                        .copy(fontSize = 14.sp, fontWeight = FontWeight.Bold).tabular(),
+                    color = if (live) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1
+                )
+                Spacer(Modifier.height(Space.xs))
+                StatusChip(match)
             }
-            TeamLine(
-                match.home, match.homeColor,
-                scoreParts?.getOrNull(0), isAway = false,
-                scoreColor = if (match.status == MatchStatus.LIVE) Color(0xFFD93A2B)
-                else MaterialTheme.colorScheme.primary
-            )
-            Spacer(Modifier.height(5.dp))
-            TeamLine(
-                match.away, match.awayColor,
-                scoreParts?.getOrNull(1), isAway = true,
-                scoreColor = if (match.status == MatchStatus.LIVE) Color(0xFFD93A2B)
-                else MaterialTheme.colorScheme.primary
-            )
-        }
-        // 右：赔率（仅未开始显示胜平负预览；进行中/已完赛只显示比分，隐藏赔率）
-        if (match.status == MatchStatus.UPCOMING) {
-            Column(horizontalAlignment = Alignment.End) {
-                OddsText(if (match.oddsW > 0) "胜 ${match.oddsW}" else "--")
-                OddsText(if (match.oddsD > 0) "平 ${match.oddsD}" else "--")
-                OddsText(if (match.oddsL > 0) "负 ${match.oddsL}" else "--")
+            // 中：球队（进行中/已完赛时，各队比分放在球队名右侧，一上一下）
+            val scoreParts = if (match.status != MatchStatus.UPCOMING && match.score != null)
+                match.score!!.split(":", limit = 2) else null
+            Column(Modifier.weight(1f).padding(horizontal = Space.sm + 2.dp)) {
+                // 按日期分组的列表没有联赛表头，联赛名放在卡片内
+                if (showLeague) {
+                    Text(
+                        match.league,
+                        Modifier.padding(bottom = Space.xs),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                TeamLine(match.home, match.homeColor, scoreParts?.getOrNull(0), live)
+                Spacer(Modifier.height(Space.sm))
+                TeamLine(match.away, match.awayColor, scoreParts?.getOrNull(1), live)
             }
-        }
-        // 收藏
-        IconButton(onClick = onFav, modifier = Modifier.size(40.dp)) {
-            Icon(
-                if (faved) Icons.Filled.Star else Icons.Outlined.StarBorder,
-                contentDescription = "收藏",
-                tint = if (faved) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(19.dp)
-            )
+            // 右：赔率（仅未开始显示胜平负预览；进行中/已完赛只显示比分，隐藏赔率）
+            if (match.status == MatchStatus.UPCOMING) {
+                Column(horizontalAlignment = Alignment.End) {
+                    OddsText("胜", match.oddsW)
+                    OddsText("平", match.oddsD)
+                    OddsText("负", match.oddsL)
+                }
+            }
+            // 收藏
+            IconButton(onClick = onFav, modifier = Modifier.size(38.dp)) {
+                Icon(
+                    if (faved) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                    contentDescription = "收藏",
+                    tint = favTint,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun TeamLine(name: String, color: Color, score: String?, isAway: Boolean, scoreColor: Color? = null) {
+private fun TeamLine(name: String, color: Color, score: String?, live: Boolean) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(
             Modifier
-                .size(7.dp)
+                .size(6.dp)
                 .clip(CircleShape)
-                .background(color)
+                .background(color.copy(alpha = 0.9f))
         )
         Text(
-            " $name",
-            fontSize = 13.sp,
+            name,
+            Modifier
+                .padding(start = Space.sm)
+                .weight(1f),
+            style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.Medium,
-            color = if (isAway && score != null) MaterialTheme.colorScheme.onSurfaceVariant
-            else MaterialTheme.colorScheme.onSurface
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
         if (score != null) {
-            Spacer(Modifier.weight(1f))
             Text(
                 score,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold,
-                color = scoreColor ?: (if (isAway) MaterialTheme.colorScheme.onSurfaceVariant
-                else MaterialTheme.colorScheme.onSurface)
+                Modifier.padding(start = Space.sm),
+                style = MaterialTheme.typography.bodyLarge
+                    .copy(fontWeight = FontWeight.Bold).tabular(),
+                color = if (live) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurface,
+                maxLines = 1
             )
         }
     }
 }
 
 @Composable
-private fun OddsText(text: String) {
-    Text(
-        text,
-        fontSize = 11.sp,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        lineHeight = 16.sp
-    )
+private fun OddsText(label: String, value: Double) {
+    Row(
+        Modifier.padding(vertical = 1.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            if (value > 0) value.toString() else "--",
+            Modifier.padding(start = Space.xs),
+            style = MaterialTheme.typography.labelLarge.tabular(),
+            color = if (value > 0) MaterialTheme.colorScheme.onSurface
+            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+            maxLines = 1
+        )
+    }
 }
 
 @Composable
 private fun StatusChip(match: MatchInfo) {
     when (match.status) {
-        MatchStatus.LIVE -> Row(
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+        MatchStatus.LIVE -> Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 Modifier
-                    .size(6.dp)
+                    .size(5.dp)
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.error)
+                    .background(MaterialTheme.colorScheme.primary)
             )
-            Text(
-                " ${match.liveMinute}'",
-                fontSize = 10.sp,
-                color = MaterialTheme.colorScheme.error,
-                fontWeight = FontWeight.Bold
+            Spacer(Modifier.width(Space.xs))
+            PillTag(
+                text = match.liveMinute?.let { "$it'" } ?: "进行中",
+                color = MaterialTheme.colorScheme.primary
             )
         }
         MatchStatus.FINISHED -> Text(
-            "完场",
-            fontSize = 10.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            "已完赛",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
         )
         MatchStatus.UPCOMING -> Text(
             "未开赛",
-            fontSize = 10.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
         )
     }
 }

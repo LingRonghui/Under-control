@@ -35,11 +35,11 @@ object LlmAnalyzer {
         try {
             if (!cfg.ready) {
                 return@withContext Result.failure(
-                    IOException("大模型未启用或配置不完整（需要服务地址 / API Key / 模型名）"),
+                    IOException("模型未启用或配置不完整（需要服务地址 / API Key / 模型名）"),
                 )
             }
             if (candidates.isEmpty()) {
-                return@withContext Result.failure(IOException("没有可用的真实候选选项，无法进行 AI 增强分析"))
+                return@withContext Result.failure(IOException("没有可用的真实候选选项，无法进行模型增强分析"))
             }
             // 按玩法分组，后续所有校验都以这里的真实候选为唯一依据
             val grouped = candidates.groupBy { it.play.trim().uppercase() }
@@ -56,16 +56,6 @@ object LlmAnalyzer {
         } catch (e: Exception) {
             Result.failure(e)
         }
-    }
-
-    /**
-     * 供界面展示的降级说明用：AI 不可用时，把本次准备的**候选范围**原样展示，
-     * 说明 AI 只能在真实候选内选择（不含比赛上下文，故与实际请求略有差异）。
-     */
-    fun promptPreview(candidates: List<CandidateOption>): String {
-        val grouped = candidates.groupBy { it.play.trim().uppercase() }
-        return "AI 只能在以下真实候选范围内选择（赔率与引擎概率均由本地提供）：\n" +
-            candidatePoolText(grouped)
     }
 
     /* ================= prompt ================= */
@@ -213,7 +203,6 @@ object LlmAnalyzer {
             bestValue = bestValue,
             safest = safest,
             sections = sections,
-            droppedNotes = dropped,
         )
         if (!analysis.ok) {
             val msg = if (dropped.isEmpty()) {

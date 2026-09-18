@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
@@ -29,8 +30,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
@@ -68,7 +67,6 @@ import com.jingcai.predict.data.remote.MatchOdds
 import com.jingcai.predict.data.remote.MatchPreviewApi
 import com.jingcai.predict.data.remote.OddsCell
 import com.jingcai.predict.data.remote.PlayerStat
-import com.jingcai.predict.data.remote.RecentMatch
 import com.jingcai.predict.data.remote.RecentTeam
 import com.jingcai.predict.data.remote.RemoteMatch
 import com.jingcai.predict.data.predict.LeagueProfile
@@ -82,11 +80,11 @@ import com.jingcai.predict.data.llm.LlmConfigStore
 import com.jingcai.predict.data.llm.PredictionBatchRunner
 import com.jingcai.predict.data.llm.SlipPlayCodes
 import com.jingcai.predict.data.llm.ValueRule
+import com.jingcai.predict.data.search.SearchHit
 import com.jingcai.predict.data.predict.ProfileRepository
 import com.jingcai.predict.data.predict.SignalWeights
 import com.jingcai.predict.data.remote.SearchPlayer
 import com.jingcai.predict.data.remote.SearchTeam
-import com.jingcai.predict.data.remote.TableRow
 import com.jingcai.predict.data.remote.TeamTables
 import com.jingcai.predict.data.slip.ParlayMath
 import com.jingcai.predict.data.slip.SavedSlip
@@ -97,7 +95,21 @@ import com.jingcai.predict.data.slip.SlipPlay
 import com.jingcai.predict.data.slip.SlipSelection
 import com.jingcai.predict.data.slip.SlipStatus
 import com.jingcai.predict.data.slip.SlipStore
+import com.jingcai.predict.ui.components.EmptyState
+import com.jingcai.predict.ui.components.Hairline
+import com.jingcai.predict.ui.components.SearchSourcesBlock
+import com.jingcai.predict.ui.components.openUrl
+import com.jingcai.predict.ui.components.KeyValueRow
+import com.jingcai.predict.ui.components.PillTag
+import com.jingcai.predict.ui.components.SectionTitle
+import com.jingcai.predict.ui.components.SegmentedTabs
+import com.jingcai.predict.ui.components.SurfaceCard
+import com.jingcai.predict.ui.components.ThinProgress
 import com.jingcai.predict.ui.components.UiMessage
+import com.jingcai.predict.ui.theme.Corner
+import com.jingcai.predict.ui.theme.Space
+import com.jingcai.predict.ui.theme.Tone
+import com.jingcai.predict.ui.theme.tabular
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -127,13 +139,18 @@ fun TeamDetailScreen(onBack: () -> Unit) {
     DetailScaffold(title = "球队详情", onBack = onBack) {
         // 顶部：队徽 + 名称
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-            NetworkImage(team.badge, Modifier.size(120.dp), fallback = "⚽", round = true)
-            Spacer(Modifier.height(14.dp))
-            Text(team.name, fontSize = 22.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
-            Spacer(Modifier.height(4.dp))
-            TypeTag("球队", Color(0xFF2E6BE6))
+            NetworkImage(team.badge, Modifier.size(112.dp), fallback = "⚽", round = true)
+            Spacer(Modifier.height(Space.lg))
+            Text(
+                team.name,
+                style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(Space.sm))
+            PillTag("球队", color = MaterialTheme.colorScheme.secondary)
         }
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(Space.xl))
         InfoCard(
             listOf(
                 "联赛" to team.league.ifEmpty { "未知" },
@@ -141,7 +158,7 @@ fun TeamDetailScreen(onBack: () -> Unit) {
                 "球队 ID" to team.id.ifEmpty { "未知" },
             )
         )
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(Space.xl))
     }
 }
 
@@ -156,13 +173,18 @@ fun PlayerDetailScreen(onBack: () -> Unit) {
     DetailScaffold(title = "球员详情", onBack = onBack) {
         // 顶部：头像 + 名称
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-            NetworkImage(player.photo, Modifier.size(120.dp), fallback = "👤", round = true)
-            Spacer(Modifier.height(14.dp))
-            Text(player.name, fontSize = 22.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
-            Spacer(Modifier.height(4.dp))
-            TypeTag("球员", Color(0xFF0E9F6E))
+            NetworkImage(player.photo, Modifier.size(112.dp), fallback = "👤", round = true)
+            Spacer(Modifier.height(Space.lg))
+            Text(
+                player.name,
+                style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(Space.sm))
+            PillTag("球员", color = MaterialTheme.colorScheme.primary)
         }
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(Space.xl))
         InfoCard(
             listOf(
                 "所属球队" to player.team.ifEmpty { "未知" },
@@ -171,7 +193,7 @@ fun PlayerDetailScreen(onBack: () -> Unit) {
                 "球员 ID" to player.id.ifEmpty { "未知" },
             )
         )
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(Space.xl))
     }
 }
 
@@ -188,42 +210,33 @@ fun MatchDetailScreen(onBack: () -> Unit) {
     var tabIndex by remember { mutableStateOf(0) }
 
     Column(Modifier.fillMaxSize()) {
-        // 顶栏：以"主队 VS 客队"命名
+        // 顶栏：轻量返回（对阵与开赛信息由下方头图区承载）
         Row(
             Modifier
                 .fillMaxWidth()
-                .padding(start = 4.dp, end = 12.dp, top = 8.dp, bottom = 4.dp),
+                .padding(start = Space.xs, end = Space.lg, top = Space.sm),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回")
-            }
-            Text(
-                "${match.home} VS ${match.away}",
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-
-        // 约 1/3：实时状态卡片
-        MatchStatusCard(match)
-
-        // 分类栏
-        TabRow(
-            selectedTabIndex = tabIndex,
-            containerColor = MaterialTheme.colorScheme.background,
-            contentColor = MaterialTheme.colorScheme.primary
-        ) {
-            matchTabs.forEachIndexed { i, t ->
-                Tab(
-                    selected = tabIndex == i,
-                    onClick = { tabIndex = i },
-                    text = { Text(t, fontSize = 13.sp) }
+            IconButton(onClick = onBack, modifier = Modifier.size(40.dp)) {
+                Icon(
+                    Icons.AutoMirrored.Outlined.ArrowBack,
+                    contentDescription = "返回",
+                    modifier = Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
+
+        // 头图区（整页视觉锚点）：联赛 + 状态 + 对阵 + 开赛时间
+        MatchStatusCard(match)
+
+        // 分类栏
+        SegmentedTabs(
+            items = matchTabs,
+            selectedIndex = tabIndex,
+            onSelect = { tabIndex = it },
+            modifier = Modifier.padding(horizontal = Space.lg, vertical = Space.md)
+        )
 
         // 内容区
         Box(
@@ -269,121 +282,101 @@ private fun MatchStatusCard(match: RemoteMatch) {
     val phase = live?.phaseName?.takeIf { it.isNotBlank() }    // 上半场/中场/比赛结束
     val minute = live?.minute?.takeIf { it.isNotBlank() }      // 分钟
 
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 14.dp, vertical = 10.dp)
-            .clip(RoundedCornerShape(18.dp))
-            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.08f))
-            .border(
-                1.dp,
-                MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
-                RoundedCornerShape(18.dp)
-            )
-            .padding(horizontal = 14.dp, vertical = 12.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+    SurfaceCard(
+        modifier = Modifier.padding(horizontal = Space.lg),
+        accent = true,
+        contentPadding = PaddingValues(horizontal = Space.lg, vertical = Space.lg),
     ) {
         // 上：联赛 + 编号 + 状态
         Row(
             Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
                 match.league.ifEmpty { "竞彩足球" },
                 Modifier.weight(1f),
-                fontSize = 12.sp,
+                style = MaterialTheme.typography.labelMedium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
                 match.num.ifEmpty { "" },
-                fontSize = 12.sp,
+                style = MaterialTheme.typography.labelMedium.tabular(),
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Spacer(Modifier.width(8.dp))
-            Box(
-                Modifier
-                    .clip(RoundedCornerShape(999.dp))
-                    .background(
-                        when {
-                            isLive -> Color(0xFFD93A2B).copy(alpha = 0.14f)
-                            isFinished -> Color(0xFF0F766E).copy(alpha = 0.14f)
-                            else -> MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
-                        }
-                    )
-                    .padding(horizontal = 8.dp, vertical = 3.dp)
-            ) {
-                Text(
-                    live?.statusName?.takeIf { it.isNotBlank() } ?: status,
-                    fontSize = 11.sp,
-                    color = when {
-                        isLive -> Color(0xFFD93A2B)
-                        isFinished -> Color(0xFF0F766E)
-                        else -> MaterialTheme.colorScheme.primary
-                    },
-                    fontWeight = FontWeight.Bold
-                )
-            }
+            Spacer(Modifier.width(Space.sm))
+            PillTag(
+                text = live?.statusName?.takeIf { it.isNotBlank() } ?: status,
+                color = when {
+                    isLive -> MaterialTheme.colorScheme.primary
+                    isFinished -> MaterialTheme.colorScheme.onSurfaceVariant
+                    else -> MaterialTheme.colorScheme.primary
+                },
+            )
         }
 
-        Spacer(Modifier.height(14.dp))
+        Spacer(Modifier.height(Space.xl))
 
         // 中：主队 | 比分/VS | 客队
         Row(
             Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
                 match.home,
                 Modifier.weight(1f),
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.titleLarge,
                 textAlign = TextAlign.End,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             if (isLive || isFinished) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Column(
+                    Modifier.padding(horizontal = Space.md),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
                     Text(
                         score ?: " -- : -- ",
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.Black,
-                        color = if (isLive) Color(0xFFD93A2B) else MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(horizontal = 10.dp)
+                        style = MaterialTheme.typography.headlineMedium.tabular(),
+                        color = if (isLive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                     )
                     if (half != null) {
-                        Text("半场 $half", fontSize = 10.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            "半场 $half",
+                            style = MaterialTheme.typography.labelSmall.tabular(),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                     if (penalty != null) {
-                        Text("点球 $penalty", fontSize = 10.sp,
-                            color = Color(0xFFD93A2B))
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            "点球 $penalty",
+                            style = MaterialTheme.typography.labelSmall.tabular(),
+                            color = MaterialTheme.colorScheme.primary
+                        )
                     }
                 }
             } else {
                 Text(
-                    " VS ",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Black,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(horizontal = 10.dp)
+                    "VS",
+                    Modifier.padding(horizontal = Space.xl),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                 )
             }
             Text(
                 match.away,
                 Modifier.weight(1f),
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.titleLarge,
                 textAlign = TextAlign.Start,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
         }
 
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(Space.md))
 
         // 下：阶段/分钟 / 赛果 / 开赛时间
         Text(
@@ -404,25 +397,29 @@ private fun MatchStatusCard(match: RemoteMatch) {
                 isFinished -> "比赛已结束，赛果已锁定"
                 else -> "开赛时间：${kickoffText(match.time)}"
             },
-            fontSize = 12.sp,
+            Modifier.fillMaxWidth(),
+            style = MaterialTheme.typography.labelMedium.tabular(),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center
         )
 
         // 实时事件列表（进球/红牌等）
-        if (live != null && live!!.events.isNotEmpty()) {
-            Spacer(Modifier.height(10.dp))
+        live?.takeIf { it.events.isNotEmpty() }?.let { liveNow ->
+            Spacer(Modifier.height(Space.md))
             Column(
                 Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(MaterialTheme.colorScheme.surface)
-                    .padding(horizontal = 10.dp, vertical = 8.dp)
+                    .clip(Corner.md)
+                    .background(Tone.fill())
+                    .padding(horizontal = Space.md, vertical = Space.sm)
             ) {
-                Text("关键事件", fontSize = 11.sp, fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary)
-                Spacer(Modifier.height(4.dp))
-                live!!.events.forEach { e ->
+                Text(
+                    "关键事件",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Spacer(Modifier.height(Space.xs))
+                liveNow.events.forEach { e ->
                     LiveEventRow(e, match)
                 }
             }
@@ -439,23 +436,23 @@ private fun LiveEventRow(e: LiveEvent, match: RemoteMatch) {
     ) {
         Text(
             "${e.minute}'",
-            fontSize = 11.sp,
+            style = MaterialTheme.typography.labelSmall.tabular(),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.width(36.dp)
         )
         Text(
             (if (isHome) match.home else match.away) + " ",
             Modifier.weight(1f),
-            fontSize = 11.sp,
+            style = MaterialTheme.typography.labelSmall,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             textAlign = if (isHome) TextAlign.End else TextAlign.Start
         )
         Text(
             e.name.ifEmpty { "事件" },
-            fontSize = 11.sp,
+            style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.SemiBold,
-            color = if (isHome) Color(0xFFD93A2B) else Color(0xFF2E6BE6)
+            color = MaterialTheme.colorScheme.primary
         )
     }
 }
@@ -486,28 +483,45 @@ private fun ForwardTab(match: RemoteMatch) {
     var preview by remember { mutableStateOf<PreviewData?>(null) }
     var failed by remember { mutableStateOf(false) }
     // 赛前情报：优先展示已缓存的模型情报，无则退回本地赔率简析（不发起任何网络请求）
-    var aiBrief by remember { mutableStateOf<String?>(null) }
+    var modelBrief by remember { mutableStateOf<String?>(null) }
+    // 情报引用的真实网络检索来源与检索状态（未启用联网检索时为空，不展示该区块）
+    var searchState by remember { mutableStateOf("") }
+    var searchSources by remember { mutableStateOf<List<SearchHit>>(emptyList()) }
     LaunchedEffect(match.matchId) {
         preview = runCatching { buildPreview(match) }.getOrNull()
         failed = preview == null
         AiPredictionStore.loadOnce(context)
-        aiBrief = AiPredictionStore.get(match.matchId)?.preview?.takeIf { it.isNotBlank() }
+        val snap = AiPredictionStore.get(match.matchId)
+        modelBrief = snap?.preview?.takeIf { it.isNotBlank() }
+        searchState = snap?.searchState.orEmpty()
+        searchSources = snap?.searchSources.orEmpty()
     }
 
     Column(
         Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 14.dp, vertical = 12.dp)
+            .padding(horizontal = Space.lg)
+            .padding(top = Space.md, bottom = Space.xl)
     ) {
         if (failed) {
-            EmptyHint("前瞻数据暂不可用\n（官方接口未返回，稍后重试）")
+            EmptyState(
+                icon = Icons.Outlined.CloudOff,
+                title = "前瞻数据暂不可用",
+                description = "官方接口未返回，稍后重试",
+            )
             return@Column
         }
         val p = preview ?: run {
-            Box(Modifier.fillMaxWidth().padding(vertical = 40.dp), contentAlignment = Alignment.Center) {
-                Text("正在加载前瞻数据…", fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Box(
+                Modifier.fillMaxWidth().padding(vertical = Space.xxl),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    "正在加载前瞻数据…",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
             return@Column
         }
@@ -516,64 +530,91 @@ private fun ForwardTab(match: RemoteMatch) {
 
         // 特征分析
         SectionTitle("特征分析")
+        Spacer(Modifier.height(Space.md))
         FeatureCard(p.feature, homeName, awayName)
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(Space.section))
 
         // 历史交锋
         SectionTitle("历史交锋")
+        Spacer(Modifier.height(Space.md))
         HistoryCard(p.h2hSum, p.history)
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(Space.section))
 
         // 积分榜
         SectionTitle("积分榜")
+        Spacer(Modifier.height(Space.md))
         TablesCard(p.homeTables, p.awayTables)
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(Space.section))
 
         // 比赛近况
         SectionTitle("比赛近况")
+        Spacer(Modifier.height(Space.md))
         RecentCard(p.homeRecent, homeName)
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(Space.sm))
         RecentCard(p.awayRecent, awayName)
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(Space.section))
 
         // 未来赛事
         SectionTitle("未来赛事")
+        Spacer(Modifier.height(Space.md))
         FutureCard(p.homeFuture, homeName)
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(Space.sm))
         FutureCard(p.awayFuture, awayName)
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(Space.section))
 
         // 射手信息
         SectionTitle("射手信息")
+        Spacer(Modifier.height(Space.md))
         PlayerCard(p.homePlayers, homeName)
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(Space.sm))
         PlayerCard(p.awayPlayers, awayName)
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(Space.section))
 
         // 伤停一览
         SectionTitle("伤停一览")
+        Spacer(Modifier.height(Space.md))
         InjuryCard(p.homeInjuries, homeName)
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(Space.sm))
         InjuryCard(p.awayInjuries, awayName)
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(Space.section))
 
         // 赛前情报（模型情报优先，无则本地简析并标注）
         SectionTitle("赛前情报")
-        Text(
-            aiBrief ?: preMatchBrief(match),
-            fontSize = 13.sp,
-            lineHeight = 21.sp,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-        if (aiBrief == null) {
-            Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(Space.md))
+        SurfaceCard(contentPadding = PaddingValues(horizontal = Space.lg, vertical = Space.md)) {
             Text(
-                "（情报未生成）",
-                fontSize = 10.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                modelBrief ?: preMatchBrief(match),
+                style = MaterialTheme.typography.bodyMedium,
+                lineHeight = 22.sp,
+                color = MaterialTheme.colorScheme.onSurface
             )
+            if (modelBrief == null) {
+                Spacer(Modifier.height(Space.xs))
+                Text(
+                    "（情报未生成）",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
-        Spacer(Modifier.height(20.dp))
+
+        // 参考来源：仅当本次预测启用过联网检索时展示；无结果或失败如实说明，绝不填充占位来源
+        if (searchState.isNotEmpty()) {
+            Spacer(Modifier.height(Space.section))
+            SearchSourcesBlock(
+                sources = searchSources,
+                onOpen = { openUrl(context, it) },
+            )
+            if (searchState.startsWith("failed")) {
+                Spacer(Modifier.height(Space.xs))
+                Text(
+                    "本次检索失败：${searchState.removePrefix("failed:").trim()}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        Spacer(Modifier.height(Space.lg))
     }
 }
 
@@ -611,35 +652,51 @@ private fun FeatureCard(f: MatchFeature?, homeName: String, awayName: String) {
         EmptyHint("特征分析数据缺失")
         return
     }
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surface)
-            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f), RoundedCornerShape(12.dp))
-            .padding(horizontal = 12.dp, vertical = 4.dp)
-    ) {
-        Row(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-            Text(homeName, Modifier.weight(1f), fontSize = 12.sp, fontWeight = FontWeight.Bold,
-                color = Color(0xFFD93A2B))
-            Text(awayName, Modifier.weight(1f), fontSize = 12.sp, fontWeight = FontWeight.Bold,
-                color = Color(0xFF2E6BE6), textAlign = TextAlign.End)
+    SurfaceCard(contentPadding = PaddingValues(horizontal = Space.lg, vertical = Space.sm)) {
+        Row(Modifier.fillMaxWidth().padding(vertical = Space.sm)) {
+            Text(
+                homeName,
+                Modifier.weight(1f),
+                style = MaterialTheme.typography.labelLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                awayName,
+                Modifier.weight(1f),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.End,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
+        Hairline()
         @Composable
         fun dimRow(label: String, d: FeatureDim?, homeV: String = "", awayV: String = "") {
             if (d == null && homeV.isEmpty()) return
-            Row(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
-                Text(label, Modifier.weight(1f), fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(Modifier.fillMaxWidth().padding(vertical = Space.sm)) {
+                Text(
+                    label,
+                    Modifier.weight(1f),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 Text(
                     if (d != null) "${d.homeWin}胜${d.homeDraw}平${d.homeLoss}负" else homeV,
-                    Modifier.weight(1f), fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
-                    textAlign = TextAlign.Center
+                    Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodySmall.tabular(),
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
                     if (d != null) "${d.awayWin}胜${d.awayDraw}平${d.awayLoss}负" else awayV,
-                    Modifier.weight(1f), fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
-                    textAlign = TextAlign.End
+                    Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodySmall.tabular(),
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.End,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
@@ -649,7 +706,7 @@ private fun FeatureCard(f: MatchFeature?, homeName: String, awayName: String) {
         dimRow("同主客战况", f.sameHomeAwayForm)
         dimRow("场均进球", null, "${f.homeGoalAvg}个", "${f.awayGoalAvg}个")
         dimRow("场均失球", null, "${f.homeLossAvg}个", "${f.awayLossAvg}个")
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(Space.xs))
     }
 }
 
@@ -660,43 +717,50 @@ private fun HistoryCard(sum: H2hSummary?, list: List<H2hMatch>) {
         EmptyHint("暂无两队交锋记录")
         return
     }
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surface)
-            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f), RoundedCornerShape(12.dp))
-            .padding(horizontal = 12.dp, vertical = 10.dp)
-    ) {
+    SurfaceCard(contentPadding = PaddingValues(horizontal = Space.lg, vertical = Space.md)) {
         sum?.let { s ->
             Text(
                 "近${s.win + s.draw + s.loss}场 ${s.teamName} ${s.win}胜 (${s.winProb}) | ${s.draw}平 (${s.drawProb}) | ${s.loss}负 (${s.lossProb})",
-                fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary
+                style = MaterialTheme.typography.bodySmall.tabular(),
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary
             )
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(Space.md))
+            Hairline()
         }
         if (list.isEmpty()) {
-            Text("暂无数据", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(Space.md))
+            Text(
+                "暂无数据",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         } else {
             list.forEachIndexed { i, m ->
-                Column {
+                if (i > 0) Hairline(Modifier.padding(vertical = Space.sm))
+                Column(Modifier.padding(vertical = Space.sm)) {
                     Text(
                         "${m.date} · ${m.tournament}",
-                        fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(Modifier.height(2.dp))
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text("${m.home} ${m.score} ${m.away}", Modifier.weight(1f),
-                            fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "${m.home} ${m.score} ${m.away}",
+                            Modifier.weight(1f),
+                            style = MaterialTheme.typography.bodyMedium.tabular(),
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(Modifier.width(Space.sm))
                         Text(
                             "半场${m.halfScore.ifEmpty { "-" }} · 总${m.totalGoal}球",
-                            fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
+                            style = MaterialTheme.typography.labelSmall.tabular(),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                }
-                if (i != list.lastIndex) {
-                    Box(Modifier.fillMaxWidth().padding(vertical = 8.dp).height(0.5.dp)
-                        .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.12f)))
                 }
             }
         }
@@ -712,43 +776,52 @@ private fun TablesCard(home: TeamTables?, away: TeamTables?) {
     }
     Column(Modifier.fillMaxWidth()) {
         home?.let { TablePanel(it) }
-        if (home != null && away != null) Spacer(Modifier.height(10.dp))
+        if (home != null && away != null) Spacer(Modifier.height(Space.sm))
         away?.let { TablePanel(it) }
     }
 }
 
 @Composable
 private fun TablePanel(t: TeamTables) {
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surface)
-            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f), RoundedCornerShape(12.dp))
-            .padding(horizontal = 12.dp, vertical = 10.dp)
-    ) {
+    SurfaceCard(contentPadding = PaddingValues(horizontal = Space.md, vertical = Space.md)) {
         Text(
             "${t.name} 第${t.total.ranking}名",
-            fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary
+            style = MaterialTheme.typography.titleSmall.tabular(),
+            color = MaterialTheme.colorScheme.primary
         )
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(Space.sm))
         Row(Modifier.fillMaxWidth()) {
             val head = listOf("", "场次", "胜/平/负", "进/失", "净", "积分", "排名")
             head.forEach { h ->
-                Text(h, Modifier.weight(1f), fontSize = 10.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+                Text(
+                    h,
+                    Modifier.weight(1f),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center
+                )
             }
         }
+        Spacer(Modifier.height(Space.sm))
+        Hairline()
         listOf(t.total, t.home, t.away).forEach { r ->
-            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                Text(r.scope, Modifier.weight(1f), fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
-                Text("${r.played}", Modifier.weight(1f), fontSize = 11.sp, textAlign = TextAlign.Center)
-                Text("${r.win}/${r.draw}/${r.loss}", Modifier.weight(1f), fontSize = 11.sp, textAlign = TextAlign.Center)
-                Text("${r.goal}/${r.lossGoal}", Modifier.weight(1f), fontSize = 11.sp, textAlign = TextAlign.Center)
-                Text("${r.netGoal}", Modifier.weight(1f), fontSize = 11.sp, textAlign = TextAlign.Center)
-                Text(r.points, Modifier.weight(1f), fontSize = 11.sp, textAlign = TextAlign.Center)
-                Text(r.ranking, Modifier.weight(1f), fontSize = 11.sp, textAlign = TextAlign.Center)
+            Row(
+                Modifier.fillMaxWidth().padding(vertical = Space.sm),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    r.scope,
+                    Modifier.weight(1f),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center
+                )
+                Text("${r.played}", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium.tabular(), textAlign = TextAlign.Center)
+                Text("${r.win}/${r.draw}/${r.loss}", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium.tabular(), textAlign = TextAlign.Center)
+                Text("${r.goal}/${r.lossGoal}", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium.tabular(), textAlign = TextAlign.Center)
+                Text("${r.netGoal}", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium.tabular(), textAlign = TextAlign.Center)
+                Text(r.points, Modifier.weight(1f), style = MaterialTheme.typography.labelMedium.tabular(), fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
+                Text(r.ranking, Modifier.weight(1f), style = MaterialTheme.typography.labelMedium.tabular(), textAlign = TextAlign.Center)
             }
         }
     }
@@ -762,49 +835,59 @@ private fun RecentCard(t: RecentTeam?, fallbackName: String) {
         EmptyHint("$name 近况数据缺失")
         return
     }
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surface)
-            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f), RoundedCornerShape(12.dp))
-            .padding(horizontal = 12.dp, vertical = 10.dp)
-    ) {
-        Text("${t.name} ${t.stat}", fontSize = 12.sp, fontWeight = FontWeight.Bold,
-            maxLines = 2, overflow = TextOverflow.Ellipsis)
-        Spacer(Modifier.height(8.dp))
+    SurfaceCard(contentPadding = PaddingValues(horizontal = Space.lg, vertical = Space.md)) {
+        Text(
+            "${t.name} ${t.stat}",
+            style = MaterialTheme.typography.titleSmall.tabular(),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
         if (t.matches.isEmpty()) {
-            Text("暂无比赛记录", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(Space.sm))
+            Text(
+                "暂无比赛记录",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         } else {
             t.matches.forEachIndexed { i, m ->
-                Column {
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("${m.home} ${m.score} ${m.away}", fontSize = 12.sp,
-                                fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text("${m.date} · ${m.tournament}", fontSize = 10.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
+                if (i > 0) Hairline(Modifier.padding(vertical = Space.sm))
+                Row(
+                    Modifier.fillMaxWidth().padding(vertical = Space.sm),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
                         Text(
-                            if (m.halfScore.isNotEmpty()) "半${m.halfScore}" else "",
-                            fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
+                            "${m.home} ${m.score} ${m.away}",
+                            style = MaterialTheme.typography.bodyMedium.tabular(),
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
-                        Spacer(Modifier.width(10.dp))
+                        Spacer(Modifier.height(2.dp))
                         Text(
-                            m.result,
-                            fontSize = 12.sp, fontWeight = FontWeight.Bold,
-                            color = when (m.result) {
-                                "胜" -> Color(0xFFD93A2B)
-                                "负" -> Color(0xFF0E9F6E)
-                                "平" -> MaterialTheme.colorScheme.onSurfaceVariant
-                                else -> MaterialTheme.colorScheme.onSurfaceVariant
-                            }
+                            "${m.date} · ${m.tournament}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
-                }
-                if (i != t.matches.lastIndex) {
-                    Box(Modifier.fillMaxWidth().padding(vertical = 6.dp).height(0.5.dp)
-                        .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.12f)))
+                    Text(
+                        if (m.halfScore.isNotEmpty()) "半${m.halfScore}" else "",
+                        style = MaterialTheme.typography.labelSmall.tabular(),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.width(Space.md))
+                    Text(
+                        m.result,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = when (m.result) {
+                            "胜" -> Tone.hit
+                            "负" -> Tone.miss
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
                 }
             }
         }
@@ -814,31 +897,36 @@ private fun RecentCard(t: RecentTeam?, fallbackName: String) {
 /** 未来赛事：单队列表 */
 @Composable
 private fun FutureCard(list: List<FutureMatch>, name: String) {
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surface)
-            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f), RoundedCornerShape(12.dp))
-            .padding(horizontal = 12.dp, vertical = 10.dp)
-    ) {
-        Text(name, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(6.dp))
+    SurfaceCard(contentPadding = PaddingValues(horizontal = Space.lg, vertical = Space.md)) {
+        Text(name, style = MaterialTheme.typography.titleSmall)
         if (list.isEmpty()) {
-            Text("暂无未来赛事", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(Space.sm))
+            Text(
+                "暂无未来赛事",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         } else {
             list.forEachIndexed { i, m ->
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("${m.home} vs ${m.away}", Modifier.weight(1f), fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (i > 0) Hairline(Modifier.padding(vertical = Space.sm))
+                Row(
+                    Modifier.fillMaxWidth().padding(top = if (i == 0) Space.sm else 0.dp, bottom = Space.sm),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "${m.home} vs ${m.away}",
+                        Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(Modifier.width(Space.sm))
                     Text(
                         "${m.date}${if (m.round.isNotEmpty()) " · ${m.round}" else ""}",
-                        fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
+                        style = MaterialTheme.typography.labelSmall.tabular(),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                }
-                if (i != list.lastIndex) {
-                    Box(Modifier.fillMaxWidth().padding(vertical = 6.dp).height(0.5.dp)
-                        .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.12f)))
                 }
             }
         }
@@ -848,40 +936,53 @@ private fun FutureCard(list: List<FutureMatch>, name: String) {
 /** 射手信息：单队射手榜 */
 @Composable
 private fun PlayerCard(list: List<PlayerStat>, name: String) {
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surface)
-            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f), RoundedCornerShape(12.dp))
-            .padding(horizontal = 12.dp, vertical = 10.dp)
-    ) {
-        Text(name, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(6.dp))
+    SurfaceCard(contentPadding = PaddingValues(horizontal = Space.md, vertical = Space.md)) {
+        Text(name, style = MaterialTheme.typography.titleSmall)
         if (list.isEmpty()) {
-            Text("暂无射手数据", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            return@Column
-        }
-        Row(Modifier.fillMaxWidth()) {
-            val head = listOf("球员", "出场(首/替)", "进球", "助攻", "场均进/助")
-            head.forEach { h ->
-                Text(h, Modifier.weight(1f), fontSize = 10.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+            Spacer(Modifier.height(Space.sm))
+            Text(
+                "暂无射手数据",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else {
+            Spacer(Modifier.height(Space.sm))
+            Row(Modifier.fillMaxWidth()) {
+                val head = listOf("球员", "出场(首/替)", "进球", "助攻", "场均进/助")
+                head.forEach { h ->
+                    Text(
+                        h,
+                        Modifier.weight(1f),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+                }
             }
-        }
-        list.forEach { p ->
-            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "${if (p.no.isNotEmpty()) "${p.no}-" else ""}${p.name}(${p.position})",
-                    Modifier.weight(1f), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis
-                )
-                Text("${p.played}(${p.started}/${p.sub})", Modifier.weight(1f), fontSize = 11.sp, textAlign = TextAlign.Center)
-                Text("${p.goal} (${p.goalProb})", Modifier.weight(1f), fontSize = 11.sp, textAlign = TextAlign.Center)
-                Text("${p.assist} (${p.assistProb})", Modifier.weight(1f), fontSize = 11.sp, textAlign = TextAlign.Center)
-                Text(
-                    if (p.goalAvg.isNotEmpty() || p.assistAvg.isNotEmpty()) "${p.goalAvg}/${p.assistAvg}" else "-",
-                    Modifier.weight(1f), fontSize = 11.sp, textAlign = TextAlign.Center
-                )
+            Spacer(Modifier.height(Space.sm))
+            Hairline()
+            list.forEach { p ->
+                Row(
+                    Modifier.fillMaxWidth().padding(vertical = Space.sm),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "${if (p.no.isNotEmpty()) "${p.no}-" else ""}${p.name}(${p.position})",
+                        Modifier.weight(1f),
+                        style = MaterialTheme.typography.labelMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text("${p.played}(${p.started}/${p.sub})", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium.tabular(), textAlign = TextAlign.Center)
+                    Text("${p.goal} (${p.goalProb})", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium.tabular(), textAlign = TextAlign.Center)
+                    Text("${p.assist} (${p.assistProb})", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium.tabular(), textAlign = TextAlign.Center)
+                    Text(
+                        if (p.goalAvg.isNotEmpty() || p.assistAvg.isNotEmpty()) "${p.goalAvg}/${p.assistAvg}" else "-",
+                        Modifier.weight(1f),
+                        style = MaterialTheme.typography.labelMedium.tabular(),
+                        textAlign = TextAlign.Center
+                    )
+                }
             }
         }
     }
@@ -890,48 +991,61 @@ private fun PlayerCard(list: List<PlayerStat>, name: String) {
 /** 伤停一览：单队伤停名单 */
 @Composable
 private fun InjuryCard(list: List<InjuryPlayer>, name: String) {
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surface)
-            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f), RoundedCornerShape(12.dp))
-            .padding(horizontal = 12.dp, vertical = 10.dp)
-    ) {
-        Text(name, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(6.dp))
+    SurfaceCard(contentPadding = PaddingValues(horizontal = Space.md, vertical = Space.md)) {
+        Text(name, style = MaterialTheme.typography.titleSmall)
         if (list.isEmpty()) {
-            Text("暂无伤停信息", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            return@Column
-        }
-        Row(Modifier.fillMaxWidth()) {
-            val head = listOf("球员", "总出场", "首发", "替补", "状态")
-            head.forEach { h ->
-                Text(h, Modifier.weight(1f), fontSize = 10.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+            Spacer(Modifier.height(Space.sm))
+            Text(
+                "暂无伤停信息",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else {
+            Spacer(Modifier.height(Space.sm))
+            Row(Modifier.fillMaxWidth()) {
+                val head = listOf("球员", "总出场", "首发", "替补", "状态")
+                head.forEach { h ->
+                    Text(
+                        h,
+                        Modifier.weight(1f),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+                }
             }
-        }
-        list.forEach { p ->
-            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "${if (p.no.isNotEmpty()) "${p.no}-" else ""}${p.name}(${p.position})",
-                    Modifier.weight(1f), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis
-                )
-                Text("${p.played}", Modifier.weight(1f), fontSize = 11.sp, textAlign = TextAlign.Center)
-                Text("${p.started}", Modifier.weight(1f), fontSize = 11.sp, textAlign = TextAlign.Center)
-                Text("${p.sub}", Modifier.weight(1f), fontSize = 11.sp, textAlign = TextAlign.Center)
-                Text(
-                    when {
-                        p.injury && p.suspension -> "伤停"
-                        p.injury -> "伤"
-                        p.suspension -> "停"
-                        else -> "-"
-                    },
-                    Modifier.weight(1f), fontSize = 11.sp, fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center,
-                    color = if (p.injury || p.suspension) Color(0xFFD93A2B)
-                    else MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            Spacer(Modifier.height(Space.sm))
+            Hairline()
+            list.forEach { p ->
+                Row(
+                    Modifier.fillMaxWidth().padding(vertical = Space.sm),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "${if (p.no.isNotEmpty()) "${p.no}-" else ""}${p.name}(${p.position})",
+                        Modifier.weight(1f),
+                        style = MaterialTheme.typography.labelMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text("${p.played}", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium.tabular(), textAlign = TextAlign.Center)
+                    Text("${p.started}", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium.tabular(), textAlign = TextAlign.Center)
+                    Text("${p.sub}", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium.tabular(), textAlign = TextAlign.Center)
+                    Text(
+                        when {
+                            p.injury && p.suspension -> "伤停"
+                            p.injury -> "伤"
+                            p.suspension -> "停"
+                            else -> "-"
+                        },
+                        Modifier.weight(1f),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        textAlign = TextAlign.Center,
+                        color = if (p.injury || p.suspension) MaterialTheme.colorScheme.error
+                        else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
     }
@@ -1049,12 +1163,15 @@ private fun OddsTab(match: RemoteMatch) {
             Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 14.dp, vertical = 12.dp)
+                .padding(horizontal = Space.lg)
                 // 底部留出方案栏高度，避免遮挡最后一块赔率
-                .padding(bottom = if (brief != null) 76.dp else 0.dp)
+                .padding(top = Space.md, bottom = if (brief != null) 76.dp else Space.lg)
         ) {
             if (loading) {
-                Box(Modifier.fillMaxWidth().padding(vertical = 48.dp), contentAlignment = Alignment.Center) {
+                Box(
+                    Modifier.fillMaxWidth().padding(vertical = Space.xxl),
+                    contentAlignment = Alignment.Center
+                ) {
                     CircularProgressIndicator()
                 }
                 return@Column
@@ -1062,6 +1179,7 @@ private fun OddsTab(match: RemoteMatch) {
 
             // 1. 胜平负
             SectionTitle("胜平负")
+            Spacer(Modifier.height(Space.md))
             if (had != null) {
                 TripleOddsCard(
                     listOf(
@@ -1073,10 +1191,11 @@ private fun OddsTab(match: RemoteMatch) {
                     onToggle = ::toggleOption,
                 )
             } else EmptyHint("本场未开售")
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(Space.section))
 
             // 2. 让球胜平负
             SectionTitle("让球胜平负${goalLine}")
+            Spacer(Modifier.height(Space.md))
             if (hhad != null) {
                 TripleOddsCard(
                     listOf(
@@ -1088,25 +1207,28 @@ private fun OddsTab(match: RemoteMatch) {
                     onToggle = ::toggleOption,
                 )
             } else EmptyHint("本场未开售")
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(Space.section))
 
             // 3. 全场比分
             SectionTitle("全场比分")
+            Spacer(Modifier.height(Space.md))
             if (crs.isEmpty()) EmptyHint("本场比分玩法未开售")
             else OddsGrid(crsList(crs), columns = 4, selected = mySelected, onToggle = ::toggleOption)
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(Space.section))
 
             // 4. 半全场胜平负
             SectionTitle("半全场胜平负")
+            Spacer(Modifier.height(Space.md))
             if (hafu.isEmpty()) EmptyHint("本场半全场玩法未开售")
             else OddsGrid(hafuList(hafu), columns = 3, selected = mySelected, onToggle = ::toggleOption)
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(Space.section))
 
             // 5. 总进球数
             SectionTitle("总进球数")
+            Spacer(Modifier.height(Space.md))
             if (ttg.isEmpty()) EmptyHint("本场总进球玩法未开售")
             else OddsGrid(ttgList(ttg), columns = 4, selected = mySelected, onToggle = ::toggleOption)
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(Space.lg))
         }
 
         // 底部方案栏：固定不随内容滚动
@@ -1164,9 +1286,11 @@ private fun crsList(crs: Map<String, OddsCell>): List<OddsOption> {
     val rx = Regex("s(\\d+)s(\\d+)")
     // 普通比分按 (主队 H, 客队 A) 数值升序
     crs.filterKeys { rx.containsMatchIn(it) }
-        .map { e ->
-            val m = rx.find(e.key)!!
-            Triple(m.groupValues[1].toInt(), m.groupValues[2].toInt(), e)
+        .mapNotNull { e ->
+            val m = rx.find(e.key) ?: return@mapNotNull null
+            val h = m.groupValues[1].toIntOrNull() ?: return@mapNotNull null
+            val a = m.groupValues[2].toIntOrNull() ?: return@mapNotNull null
+            Triple(h, a, e)
         }
         .sortedWith(compareBy({ it.first }, { it.second }))
         .forEach { (h, a, e) -> out += OddsOption(SlipPlay.CRS.code, e.key, "$h:$a", e.value) }
@@ -1212,7 +1336,7 @@ private fun ttgList(ttg: Map<String, OddsCell>): List<OddsOption> {
 /* ---------- 预测分析 Tab ---------- */
 
 /**
- * 预测分析：直接读取本地缓存中的「综合结论」（模型为核心 + 架构为基础的整体结论）。
+ * 预测分析：直接读取本地缓存中的「综合结论」（模型结论与本地概率综合的整体结论）。
  * - 进入页面只读缓存，**绝不重新预测**（不发起任何模型调用）；
  * - 无缓存且比赛未开赛时才生成一次，生成结果落盘，之后进入本页直接读取；
  * - 只有「模型复核」会强制重算该场（reviewCount + 1）。
@@ -1296,25 +1420,24 @@ private fun PredictionTab(match: RemoteMatch) {
         Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 14.dp, vertical = 12.dp)
+            .padding(horizontal = Space.lg)
     ) {
         // 「预测目标」标题行 + 「模型复核」按钮
         Row(
-            Modifier.fillMaxWidth().padding(bottom = 8.dp),
+            Modifier.fillMaxWidth().padding(top = Space.md, bottom = Space.md),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
                 "预测目标",
                 Modifier.weight(1f),
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface
             )
             OutlinedButton(
                 onClick = { review() },
                 enabled = !building,
-                shape = RoundedCornerShape(10.dp),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                shape = Corner.pill,
+                contentPadding = PaddingValues(horizontal = Space.md, vertical = 4.dp)
             ) {
                 if (building) {
                     CircularProgressIndicator(
@@ -1323,9 +1446,9 @@ private fun PredictionTab(match: RemoteMatch) {
                         color = MaterialTheme.colorScheme.primary
                     )
                     Spacer(Modifier.width(6.dp))
-                    Text("复核中…", fontSize = 12.sp)
+                    Text("复核中…", style = MaterialTheme.typography.labelMedium)
                 } else {
-                    Text("模型复核", fontSize = 12.sp)
+                    Text("模型复核", style = MaterialTheme.typography.labelMedium)
                 }
             }
         }
@@ -1334,89 +1457,105 @@ private fun PredictionTab(match: RemoteMatch) {
         when {
             cp != null -> {
                 cp.picks.forEachIndexed { i, pick ->
-                    if (i > 0) Spacer(Modifier.height(8.dp))
+                    if (i > 0) Spacer(Modifier.height(Space.sm))
                     CombinedPickRow(pick)
                 }
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(Space.lg))
+
+                // 综合置信度说明（口径原文照呈，可复算）
+                SectionTitle("综合置信度")
+                Spacer(Modifier.height(Space.sm))
                 Text(
                     CombineRule.NOTE,
-                    fontSize = 10.sp,
+                    style = MaterialTheme.typography.labelSmall,
                     lineHeight = 15.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Spacer(Modifier.height(20.dp))
+                Spacer(Modifier.height(Space.xl))
 
                 // 实时建议：最具价值 / 最稳健（数字全部本地可复算，模型仅作解读）
                 SectionTitle("实时建议")
+                Spacer(Modifier.height(Space.md))
                 val bankroll = cfg?.bankroll ?: 100.0
                 if (cp.bestValue == null && cp.safest == null) {
                     EmptyHint("统计信号缺失，不具备给出建议的数据基础")
                 } else {
                     cp.bestValue?.let {
                         AdviceCard("最具价值", it, bankroll)
-                        if (cp.safest != null) Spacer(Modifier.height(8.dp))
+                        if (cp.safest != null) Spacer(Modifier.height(Space.sm))
                     }
                     cp.safest?.let { AdviceCard("最稳健", it, bankroll) }
-                    Spacer(Modifier.height(6.dp))
+                    Spacer(Modifier.height(Space.md))
                     Text(
-                        "${ValueRule.NOTE}；最稳健不设门槛，取架构概率最高者。期望值 = 架构概率 × 官方真实赔率 − 1（>0 才有盈利空间）；建议投入按凯利公式（全凯利）计算，实盘通常再取 1/4~1/2 折扣。均为概率与赔率的数学结果，不构成投注建议。",
-                        fontSize = 10.sp,
+                        "${ValueRule.NOTE}；最稳健不设门槛，取模型概率最高者。期望值 = 模型概率 × 官方真实赔率 − 1（>0 才有盈利空间）；建议投入按凯利公式（全凯利）计算，实盘通常再取 1/4~1/2 折扣。均为概率与赔率的数学结果，不构成投注建议。",
+                        style = MaterialTheme.typography.labelSmall,
                         lineHeight = 15.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                Spacer(Modifier.height(20.dp))
+                Spacer(Modifier.height(Space.xl))
 
                 // 思路分析（分节，全部来自综合结论快照；快照无分节时用快照数据兜底，不整块消失）
                 SectionTitle("思路分析")
+                Spacer(Modifier.height(Space.md))
                 val sections = cp.sections
                 if (sections.isEmpty()) {
                     AnalysisSection("结论", fallbackConclusion(cp))
                 } else {
                     sections.forEachIndexed { i, (title, content) ->
-                        if (i > 0) Spacer(Modifier.height(8.dp))
+                        if (i > 0) Spacer(Modifier.height(Space.sm))
                         AnalysisSection(title, content)
                     }
                 }
-                Spacer(Modifier.height(20.dp))
+                Spacer(Modifier.height(Space.xl))
 
                 // 状态行（无条件渲染）
                 Text(
                     if (cp.model.isNotBlank())
-                        "综合置信度由 ${cp.model} 与本地架构整体运算得出；概率、赔率取官方真实数据（可复算），理由为主观评估"
-                    else "未配置大模型，以上为架构（本地引擎）结果",
-                    fontSize = 10.sp,
+                        "综合置信度由模型与本地概率运算综合得出；概率、赔率取官方真实数据（可复算），理由为主观评估"
+                    else "未配置模型，以上为模型结果",
+                    style = MaterialTheme.typography.labelSmall,
                     lineHeight = 15.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 buildError?.let {
-                    Spacer(Modifier.height(3.dp))
-                    Text(it, fontSize = 10.sp, lineHeight = 15.sp, color = MaterialTheme.colorScheme.error)
+                    Spacer(Modifier.height(Space.xs))
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.labelSmall,
+                        lineHeight = 15.sp,
+                        color = MaterialTheme.colorScheme.error
+                    )
                 }
                 // 模型侧未出结果时如实提示（超时 / 不可用），不静默降级
                 modelSideNote(cp, cfg)?.let {
-                    Spacer(Modifier.height(3.dp))
-                    Text(it, fontSize = 10.sp, lineHeight = 15.sp, color = MaterialTheme.colorScheme.error)
+                    Spacer(Modifier.height(Space.xs))
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.labelSmall,
+                        lineHeight = 15.sp,
+                        color = MaterialTheme.colorScheme.error
+                    )
                 }
-                Spacer(Modifier.height(3.dp))
+                Spacer(Modifier.height(Space.xs))
                 Text(
                     "生成 ${stampText(cp.updatedAt)} · 复核 ${cp.reviewCount} 次",
-                    fontSize = 10.sp,
+                    style = MaterialTheme.typography.labelSmall.tabular(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(Space.lg))
             }
 
             building -> Box(
-                Modifier.fillMaxWidth().padding(vertical = 60.dp),
+                Modifier.fillMaxWidth().padding(vertical = Space.xxl),
                 contentAlignment = Alignment.Center
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(Space.md))
                     Text(
                         "正在生成综合预测…（首次生成，之后进入本页将直接读取结果）",
-                        fontSize = 12.sp,
+                        style = MaterialTheme.typography.bodySmall,
                         lineHeight = 18.sp,
                         textAlign = TextAlign.Center,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -1425,20 +1564,20 @@ private fun PredictionTab(match: RemoteMatch) {
             }
 
             else -> Box(
-                Modifier.fillMaxWidth().padding(vertical = 60.dp),
+                Modifier.fillMaxWidth().padding(vertical = Space.xxl),
                 contentAlignment = Alignment.Center
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         "暂无综合预测",
-                        fontSize = 13.sp,
+                        style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     buildError?.let {
-                        Spacer(Modifier.height(6.dp))
+                        Spacer(Modifier.height(Space.sm))
                         Text(
                             it,
-                            fontSize = 11.sp,
+                            style = MaterialTheme.typography.bodySmall,
                             lineHeight = 17.sp,
                             textAlign = TextAlign.Center,
                             color = MaterialTheme.colorScheme.error
@@ -1483,15 +1622,15 @@ private fun PredictionTab(match: RemoteMatch) {
             )
         }
 
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(Space.sm))
         Text(
             "预测结果仅供参考，不构成投注建议。",
             Modifier.fillMaxWidth(),
-            fontSize = 11.sp,
+            style = MaterialTheme.typography.labelSmall,
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(Space.xl))
     }
 }
 
@@ -1509,37 +1648,35 @@ private fun LeagueConfigPanel(
     onApply: () -> Unit,
     onReset: () -> Unit,
 ) {
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(MaterialTheme.colorScheme.surface)
-            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), RoundedCornerShape(14.dp))
-    ) {
+    SurfaceCard(contentPadding = PaddingValues(0.dp)) {
         // 头部（点击展开/收起）
         Row(
             Modifier
                 .fillMaxWidth()
                 .clickable(onClick = onToggle)
-                .padding(horizontal = 13.dp, vertical = 11.dp),
+                .padding(horizontal = Space.lg, vertical = Space.md),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(Modifier.weight(1f)) {
-                Text("${base.league} 联赛参数配置", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                Text("${base.league} 联赛参数配置", style = MaterialTheme.typography.titleSmall)
                 Text(
                     if (base.sourceNote.startsWith("用户自定义"))
                         "当前为自定义参数，已本地保存"
                     else "联赛默认模板，调整后立即重算",
                     Modifier.padding(top = 1.dp),
-                    fontSize = 10.sp,
+                    style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            Text(if (open) "▾" else "▸", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                if (open) "▾" else "▸",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
         if (open) {
-            Box(Modifier.fillMaxWidth().height(0.5.dp).background(MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)))
-            Column(Modifier.padding(horizontal = 13.dp, vertical = 10.dp)) {
+            Hairline(startPadding = Space.lg, endPadding = Space.lg)
+            Column(Modifier.padding(horizontal = Space.lg, vertical = Space.md)) {
                 StepRow("场均进球 μ", fmt2(editAvg),
                     { onAvg((editAvg - 0.05).coerceIn(1.5, 4.5)) },
                     { onAvg((editAvg + 0.05).coerceIn(1.5, 4.5)) })
@@ -1561,13 +1698,13 @@ private fun LeagueConfigPanel(
                 StepRow("权重·官方", fmt2(editWs),
                     { onWs((editWs - 0.05).coerceIn(0.0, 1.0)) },
                     { onWs((editWs + 0.05).coerceIn(0.0, 1.0)) })
-                Spacer(Modifier.height(10.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = onReset, Modifier.weight(1f), shape = RoundedCornerShape(10.dp)) {
-                        Text("恢复联赛默认", fontSize = 12.sp)
+                Spacer(Modifier.height(Space.md))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                    OutlinedButton(onClick = onReset, Modifier.weight(1f), shape = Corner.sm) {
+                        Text("恢复联赛默认", style = MaterialTheme.typography.labelMedium)
                     }
-                    Button(onClick = onApply, Modifier.weight(1f), shape = RoundedCornerShape(10.dp)) {
-                        Text("应用并重新计算", fontSize = 12.sp)
+                    Button(onClick = onApply, Modifier.weight(1f), shape = Corner.sm) {
+                        Text("应用并重新计算", style = MaterialTheme.typography.labelMedium)
                     }
                 }
             }
@@ -1577,27 +1714,50 @@ private fun LeagueConfigPanel(
 
 @Composable
 private fun StepRow(label: String, value: String, onMinus: () -> Unit, onPlus: () -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, Modifier.weight(1f), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        OutlinedButton(
-            onClick = onMinus,
-            Modifier.size(30.dp),
-            contentPadding = PaddingValues(0.dp),
-            shape = CircleShape
-        ) { Text("−", fontSize = 14.sp) }
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = Space.xxs),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
         Text(
-            " $value ",
+            label,
+            Modifier.weight(1f),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Box(
+            Modifier
+                .size(28.dp)
+                .clip(CircleShape)
+                .background(Tone.fill())
+                .clickable(onClick = onMinus),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                "−",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
+        Text(
+            value,
             Modifier.width(64.dp),
-            fontSize = 13.sp,
-            fontWeight = FontWeight.SemiBold,
+            style = MaterialTheme.typography.titleSmall.tabular(),
             textAlign = TextAlign.Center
         )
-        Button(
-            onClick = onPlus,
-            Modifier.size(30.dp),
-            contentPadding = PaddingValues(0.dp),
-            shape = CircleShape
-        ) { Text("＋", fontSize = 13.sp) }
+        Box(
+            Modifier
+                .size(28.dp)
+                .clip(CircleShape)
+                .background(Tone.fill())
+                .clickable(onClick = onPlus),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                "＋",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
     }
 }
 
@@ -1612,15 +1772,15 @@ private fun stampText(ms: Long): String =
 /**
  * 模型侧失败原因的如实提示（状态行附近展示，不静默降级）：
  * 已配置可用模型（[LlmConfig.ready]）却没有模型产出时，说明该场模型部分未成功；
- * 只陈述可核实的事实（快照里没有模型名/没有赛前情报）与可能原因，不臆造具体错误信息。
+ * 只陈述可核实的事实（快照里没有模型结果标识 / 没有赛前情报）与可能原因，不臆造具体错误信息。
  */
 private fun modelSideNote(cp: CombinedPrediction, cfg: LlmConfig?): String? {
     if (cfg?.ready != true) return null
     if (cp.model.isBlank()) {
-        return "本场未取得模型结果（模型响应超时 / 不可用，或本场无可用真实赔率），以上为架构（本地引擎）结果"
+        return "本场未取得模型结果（模型响应超时 / 不可用，或本场无可用真实赔率），以上为模型结果"
     }
     if (cp.preview.isBlank()) {
-        return "本场赛前情报未生成（模型响应超时或未返回），其余结论仍为模型与架构整体运算结果"
+        return "本场赛前情报未生成（模型响应超时或未返回），其余结论仍为模型综合运算结果"
     }
     return null
 }
@@ -1628,26 +1788,15 @@ private fun modelSideNote(cp: CombinedPrediction, cfg: LlmConfig?): String? {
 /* ---------- 通用小组件 ---------- */
 
 @Composable
-private fun SectionTitle(text: String) {
-    Text(
-        text,
-        Modifier.padding(bottom = 8.dp),
-        fontSize = 14.sp,
-        fontWeight = FontWeight.Bold,
-        color = MaterialTheme.colorScheme.primary
-    )
-}
-
-@Composable
 private fun EmptyHint(text: String) {
     Text(
         text,
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-            .padding(vertical = 18.dp),
-        fontSize = 12.sp,
+            .clip(Corner.md)
+            .background(Tone.fill())
+            .padding(horizontal = Space.lg, vertical = Space.xl),
+        style = MaterialTheme.typography.bodySmall,
         textAlign = TextAlign.Center,
         lineHeight = 19.sp,
         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -1666,53 +1815,48 @@ private fun TripleOddsCard(
         return
     }
     Row(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(MaterialTheme.colorScheme.surface)
-            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), RoundedCornerShape(14.dp))
-            .padding(vertical = 10.dp),
-        horizontalArrangement = Arrangement.SpaceEvenly,
-        verticalAlignment = Alignment.CenterVertically
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(Space.sm)
     ) {
         options.forEach { opt ->
             val isOn = opt.key in selected
             Box(
                 Modifier
-                    .clip(RoundedCornerShape(10.dp))
+                    .weight(1f)
+                    .clip(Corner.sm)
                     .background(
-                        if (isOn) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f) else Color.Transparent
+                        if (isOn) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f) else Tone.fill()
                     )
                     .border(
                         1.dp,
-                        // 未选中保持原有卡片外观（透明边框仅用于避免选中后尺寸跳动）
-                        if (isOn) MaterialTheme.colorScheme.primary else Color.Transparent,
-                        RoundedCornerShape(10.dp)
+                        // 未选中画透明边框，仅用于避免选中后尺寸跳动
+                        if (isOn) MaterialTheme.colorScheme.primary.copy(alpha = 0.6f) else Color.Transparent,
+                        Corner.sm
                     )
                     .clickable(enabled = opt.odds != null) { onToggle(opt) }
-                    .padding(horizontal = 14.dp, vertical = 7.dp),
+                    .padding(vertical = Space.md),
                 contentAlignment = Alignment.Center
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         opt.label,
-                        fontSize = 12.sp,
+                        style = MaterialTheme.typography.labelMedium,
                         color = if (isOn) MaterialTheme.colorScheme.primary
                         else MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Spacer(Modifier.height(5.dp))
+                    Spacer(Modifier.height(Space.xs))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             opt.cell.value,
-                            fontSize = 17.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
+                            style = MaterialTheme.typography.titleMedium.tabular(),
+                            color = if (isOn) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurface
                         )
-                        Spacer(Modifier.width(3.dp))
+                        Spacer(Modifier.width(2.dp))
                         TrendArrow(opt.cell)
                     }
                 }
-                if (isOn) CheckBadge(Modifier.align(Alignment.TopStart))
+                if (isOn) CheckBadge(Modifier.align(Alignment.TopStart).padding(start = Space.sm, top = Space.xs))
             }
         }
     }
@@ -1730,8 +1874,8 @@ private fun OddsGrid(
         Row(
             Modifier
                 .fillMaxWidth()
-                .padding(bottom = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                .padding(bottom = Space.sm),
+            horizontalArrangement = Arrangement.spacedBy(Space.sm)
         ) {
             rowItems.forEach { opt ->
                 OddsGridCell(
@@ -1757,34 +1901,33 @@ private fun OddsGridCell(
 ) {
     Box(
         modifier
-            .clip(RoundedCornerShape(10.dp))
+            .clip(Corner.sm)
             .background(
-                if (isOn) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
-                else MaterialTheme.colorScheme.surface
+                if (isOn) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+                else Tone.fill()
             )
             .border(
                 1.dp,
-                if (isOn) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.outline.copy(alpha = 0.25f),
-                RoundedCornerShape(10.dp)
+                if (isOn) MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+                else Color.Transparent,
+                Corner.sm
             )
             .clickable(enabled = opt.odds != null) { onToggle(opt) }
-            .padding(vertical = 9.dp),
+            .padding(vertical = Space.sm),
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 opt.label,
-                fontSize = 11.sp,
+                style = MaterialTheme.typography.labelSmall,
                 color = if (isOn) MaterialTheme.colorScheme.primary
                 else MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Spacer(Modifier.height(3.dp))
+            Spacer(Modifier.height(2.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     opt.cell.value,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold,
+                    style = MaterialTheme.typography.titleSmall.tabular(),
                     color = if (isOn) MaterialTheme.colorScheme.primary
                     else MaterialTheme.colorScheme.onSurface
                 )
@@ -1792,7 +1935,7 @@ private fun OddsGridCell(
                 TrendArrow(opt.cell)
             }
         }
-        if (isOn) CheckBadge(Modifier.align(Alignment.TopStart))
+        if (isOn) CheckBadge(Modifier.align(Alignment.TopStart).padding(start = Space.xs, top = 2.dp))
     }
 }
 
@@ -1802,7 +1945,7 @@ private fun CheckBadge(modifier: Modifier = Modifier) {
     Text(
         "✓",
         modifier,
-        fontSize = 10.sp,
+        style = MaterialTheme.typography.labelSmall,
         fontWeight = FontWeight.Bold,
         color = MaterialTheme.colorScheme.primary
     )
@@ -1819,36 +1962,41 @@ private fun SchemeBar(
     onOpen: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Row(
+    Column(
         modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surface)
-            .padding(start = 14.dp, end = 10.dp, top = 8.dp, bottom = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            if (calc.noteCount == 0L) "已选 $matchCount 场 · 未成单（官方未开单关，请再选 1 场）"
-            else "已选 $matchCount 场 · ${calc.noteCount} 注 · ${ParlayMath.money(calc.stake)} 元",
-            Modifier.weight(1f),
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-        IconButton(onClick = onClear, Modifier.size(36.dp)) {
-            Icon(
-                Icons.Outlined.Delete,
-                contentDescription = "清空方案",
-                Modifier.size(18.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        Button(
-            onClick = onOpen,
-            shape = RoundedCornerShape(10.dp),
-            contentPadding = PaddingValues(horizontal = 18.dp, vertical = 8.dp)
+        Hairline()
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(start = Space.lg, end = Space.sm, top = Space.sm, bottom = Space.sm),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("查看方案", fontSize = 13.sp)
+            Text(
+                if (calc.noteCount == 0L) "已选 $matchCount 场 · 未成单（官方未开单关，请再选 1 场）"
+                else "已选 $matchCount 场 · ${calc.noteCount} 注 · ${ParlayMath.money(calc.stake)} 元",
+                Modifier.weight(1f),
+                style = MaterialTheme.typography.labelLarge.tabular(),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            IconButton(onClick = onClear, Modifier.size(36.dp)) {
+                Icon(
+                    Icons.Outlined.Delete,
+                    contentDescription = "清空方案",
+                    Modifier.size(17.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Button(
+                onClick = onOpen,
+                shape = Corner.sm,
+                contentPadding = PaddingValues(horizontal = Space.lg, vertical = Space.sm)
+            ) {
+                Text("查看方案", style = MaterialTheme.typography.labelLarge)
+            }
         }
     }
 }
@@ -1880,49 +2028,48 @@ private fun SlipCalculatorSheet(onDismiss: () -> Unit) {
                 .fillMaxWidth()
                 .heightIn(max = 560.dp)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 14.dp)
-                .padding(bottom = 16.dp)
+                .padding(horizontal = Space.lg)
+                .padding(bottom = Space.lg)
         ) {
-            Text("方案计算器", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(10.dp))
+            Text("方案计算器", style = MaterialTheme.typography.titleLarge)
+            Spacer(Modifier.height(Space.md))
 
             /* ---- 已选列表（按比赛分组） ---- */
             selections.groupBy { it.matchId }.values.forEach { legs ->
                 val head = legs.first()
                 Row(
-                    Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 2.dp),
+                    Modifier.fillMaxWidth().padding(top = Space.sm, bottom = 2.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
                         "${head.matchNum} · ${head.league} · ${head.home} vs ${head.away}",
                         Modifier.weight(1f),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleSmall,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
                         head.kickoff,
-                        fontSize = 10.sp,
+                        style = MaterialTheme.typography.labelSmall.tabular(),
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
                 legs.forEach { sel ->
                     Row(
-                        Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                        Modifier.fillMaxWidth().padding(vertical = Space.xs),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
                             "${sel.playLabel} ${sel.optionLabel}" +
                                 if (sel.goalLine.isNotEmpty()) "（${sel.goalLine}）" else "",
                             Modifier.weight(1f),
-                            fontSize = 12.sp,
+                            style = MaterialTheme.typography.bodyMedium,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
                         Text(
                             String.format(Locale.US, "%.2f", sel.odds),
-                            fontSize = 12.sp,
+                            style = MaterialTheme.typography.bodyMedium.tabular(),
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.primary
                         )
@@ -1944,31 +2091,30 @@ private fun SlipCalculatorSheet(onDismiss: () -> Unit) {
                         }
                     }
                 }
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 6.dp)
-                        .height(0.5.dp)
-                        .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
-                )
+                Hairline(Modifier.padding(vertical = Space.sm))
             }
 
             /* ---- 过关方式 ---- */
             SectionTitle("过关方式")
-            Text("自由过关", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(Space.sm))
+            Text(
+                "自由过关",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(Space.sm))
             if (!singleOk) {
                 Text(
                     "本场所选玩法官方未开单关",
-                    fontSize = 10.sp,
+                    style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.error
                 )
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(Space.sm))
             }
             (1..kMax).toList().chunked(6).forEach { rowKs ->
                 Row(
-                    Modifier.fillMaxWidth().padding(bottom = 6.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    Modifier.fillMaxWidth().padding(bottom = Space.sm),
+                    horizontalArrangement = Arrangement.spacedBy(Space.sm)
                 ) {
                     rowKs.forEach { k ->
                         ParlayChip(
@@ -1986,13 +2132,17 @@ private fun SlipCalculatorSheet(onDismiss: () -> Unit) {
 
             // M串N 容错套餐（需要至少 2 场，套餐名与注数按官方注数分配表）
             if (matchCount >= 2) {
-                Spacer(Modifier.height(2.dp))
-                Text("M串N 套餐", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(Space.sm))
+                Text(
+                    "M串N 套餐",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(Space.sm))
                 ParlayMath.presets(matchCount).chunked(3).forEach { rowPresets ->
                     Row(
-                        Modifier.fillMaxWidth().padding(bottom = 6.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        Modifier.fillMaxWidth().padding(bottom = Space.sm),
+                        horizontalArrangement = Arrangement.spacedBy(Space.sm)
                     ) {
                         rowPresets.forEach { (name, keys) ->
                             ParlayChip(
@@ -2008,8 +2158,9 @@ private fun SlipCalculatorSheet(onDismiss: () -> Unit) {
             }
 
             /* ---- 倍数 ---- */
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(Space.sm))
             SectionTitle("倍数")
+            Spacer(Modifier.height(Space.sm))
             StepRow(
                 "投注倍数",
                 "${SlipHolder.multiple}",
@@ -2018,59 +2169,51 @@ private fun SlipCalculatorSheet(onDismiss: () -> Unit) {
             )
 
             /* ---- 计算结果 ---- */
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(Space.md))
             SectionTitle("计算结果")
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.07f))
-                    .border(
-                        1.dp,
-                        MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
-                        RoundedCornerShape(12.dp)
-                    )
-                    .padding(horizontal = 12.dp, vertical = 10.dp)
+            Spacer(Modifier.height(Space.sm))
+            SurfaceCard(
+                accent = true,
+                contentPadding = PaddingValues(horizontal = Space.lg, vertical = Space.sm),
             ) {
                 val c = brief?.calc
-                CalcRow("过关方式", ParlayMath.parlayText(brief?.useParlay ?: emptyList()))
-                CalcRow("注数", "${c?.noteCount ?: 0L} 注")
-                CalcRow("金额", "${ParlayMath.money(c?.stake ?: 0.0)} 元（注数 × 2 × 倍数）")
-                CalcRow(
+                KeyValueRow("过关方式", ParlayMath.parlayText(brief?.useParlay ?: emptyList()))
+                KeyValueRow("注数", "${c?.noteCount ?: 0L} 注")
+                KeyValueRow("金额", "${ParlayMath.money(c?.stake ?: 0.0)} 元（注数 × 2 × 倍数）")
+                KeyValueRow(
                     "单注奖金",
                     "${ParlayMath.money(c?.minNotePrize ?: 0.0)} ~ ${ParlayMath.money(c?.maxNotePrize ?: 0.0)} 元"
                 )
-                CalcRow("全部命中合计", "${ParlayMath.money(c?.totalIfAllHit ?: 0.0)} 元")
+                KeyValueRow("全部命中合计", "${ParlayMath.money(c?.totalIfAllHit ?: 0.0)} 元")
                 if ((c?.capPerNote ?: 0.0) > 0) {
                     Text(
                         "单注最高奖金限额 ${ParlayMath.money(c!!.capPerNote)} 元",
-                        Modifier.padding(top = 3.dp),
-                        fontSize = 10.sp,
+                        Modifier.padding(top = Space.xs),
+                        style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
                 if (c?.estimated == true) {
                     Text(
                         "注数过多，奖金为理论值",
-                        Modifier.padding(top = 3.dp),
-                        fontSize = 10.sp,
+                        Modifier.padding(top = Space.xs),
+                        style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
                 if (c?.overStakeLimit == true) {
                     Text(
                         "超过单张彩票 20000 元限额，请减少注数或倍数",
-                        Modifier.padding(top = 4.dp),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold,
+                        Modifier.padding(top = Space.xs),
+                        style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.error
                     )
                 }
             }
 
             /* ---- 操作 ---- */
-            Spacer(Modifier.height(14.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Spacer(Modifier.height(Space.lg))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                 OutlinedButton(
                     onClick = {
                         SlipHolder.clear()
@@ -2078,8 +2221,8 @@ private fun SlipCalculatorSheet(onDismiss: () -> Unit) {
                         onDismiss()
                     },
                     Modifier.weight(1f),
-                    shape = RoundedCornerShape(10.dp)
-                ) { Text("清空", fontSize = 13.sp) }
+                    shape = Corner.sm
+                ) { Text("清空", style = MaterialTheme.typography.labelLarge) }
                 Button(
                     onClick = {
                         val b = slipBrief()
@@ -2122,8 +2265,8 @@ private fun SlipCalculatorSheet(onDismiss: () -> Unit) {
                         }
                     },
                     Modifier.weight(1f),
-                    shape = RoundedCornerShape(10.dp)
-                ) { Text("保存方案", fontSize = 13.sp) }
+                    shape = Corner.sm
+                ) { Text("保存方案", style = MaterialTheme.typography.labelLarge) }
             }
         }
     }
@@ -2140,24 +2283,24 @@ private fun ParlayChip(
 ) {
     Box(
         modifier
-            .clip(RoundedCornerShape(9.dp))
+            .clip(Corner.sm)
             .background(
-                if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
-                else MaterialTheme.colorScheme.surface
+                if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+                else Tone.fill()
             )
             .border(
                 1.dp,
-                if (selected) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
-                RoundedCornerShape(9.dp)
+                if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+                else Color.Transparent,
+                Corner.sm
             )
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(vertical = 8.dp),
+            .padding(vertical = Space.sm),
         contentAlignment = Alignment.Center
     ) {
         Text(
             label,
-            fontSize = 11.sp,
+            style = MaterialTheme.typography.labelMedium,
             fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
             color = when {
                 !enabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
@@ -2168,121 +2311,108 @@ private fun ParlayChip(
     }
 }
 
-/** 计算器结果行：左侧项目名，右侧取值 */
-@Composable
-private fun CalcRow(label: String, value: String) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
-        Text(label, Modifier.weight(1f), fontSize = 12.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-    }
-}
-
 /** 赔率变化箭头：上升红 ↑，下降绿 ↓ */
 @Composable
 private fun TrendArrow(c: OddsCell) {
     if (c.trend == 0) return
     Text(
         if (c.trend == 1) "↑" else "↓",
-        fontSize = 12.sp,
+        style = MaterialTheme.typography.labelMedium,
         fontWeight = FontWeight.Bold,
-        color = if (c.trend == 1) Color(0xFFDB2B2B) else Color(0xFF0BA64A)
+        color = if (c.trend == 1) Tone.hit else Tone.miss
     )
 }
 
 /* ---------- 综合结论：预测目标行 ---------- */
 
-/** 预测目标一行：综合选项（模型判断优先）+ 架构概率/赔率 + 备选 + 模型理由 + 命中（红色只用于命中） */
+/** 预测目标一行：综合选项（模型判断优先）+ 模型概率/官方赔率 + 备选 + 模型理由 + 命中状态（红只用于命中、绿只用于未中） */
 @Composable
 private fun CombinedPickRow(p: CombinedPick) {
-    val accent = Color(0xFFD93A2B)   // 命中红：仅命中时使用
-    val hitStyle = p.hit == true
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(
-                if (hitStyle) accent.copy(alpha = 0.10f)
-                else MaterialTheme.colorScheme.primary.copy(alpha = 0.07f)
-            )
-            .border(
-                1.dp,
-                if (hitStyle) accent.copy(alpha = 0.45f)
-                else MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
-                RoundedCornerShape(12.dp)
-            )
-            .padding(horizontal = 14.dp, vertical = 11.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            if (hitStyle) {
-                Box(
-                    Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(accent)
-                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                ) {
-                    Text("命中", fontSize = 10.sp, color = Color.White, fontWeight = FontWeight.Bold)
-                }
-                Spacer(Modifier.width(8.dp))
-            }
-            Text(
-                p.playLabel,
-                fontSize = 13.sp,
-                fontWeight = if (hitStyle) FontWeight.Bold else FontWeight.Medium,
-                color = if (hitStyle) accent else MaterialTheme.colorScheme.onSurfaceVariant
-            )
+    val stateColor = when (p.hit) {
+        true -> Tone.hit
+        false -> Tone.miss
+        null -> Tone.pending()
+    }
+    val stateText = when (p.hit) {
+        true -> "命中"
+        false -> "未中"
+        null -> "待结算"
+    }
+    SurfaceCard(contentPadding = PaddingValues(horizontal = Space.lg, vertical = Space.md)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(p.playLabel, style = MaterialTheme.typography.titleSmall)
             Spacer(Modifier.weight(1f))
-            Text(
-                "综合置信度 ${p.confidence}",
-                fontSize = 11.sp,
-                fontWeight = if (hitStyle) FontWeight.Bold else FontWeight.Normal,
-                color = if (hitStyle) accent else MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            PillTag(stateText, color = stateColor)
         }
-        Spacer(Modifier.height(5.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Spacer(Modifier.height(Space.md))
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
             if (p.option.isNotBlank()) {
                 Text(
                     p.option,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (hitStyle) accent else MaterialTheme.colorScheme.primary
+                    style = MaterialTheme.typography.titleLarge,
+                    color = stateColor
                 )
                 if (p.odds > 0.0) {
-                    Spacer(Modifier.width(6.dp))
+                    Spacer(Modifier.width(Space.sm))
                     Text(
                         "赔率 ${ParlayMath.money(p.odds)}",
-                        fontSize = 11.sp,
-                        color = if (hitStyle) accent.copy(alpha = 0.85f)
-                        else MaterialTheme.colorScheme.onSurfaceVariant
+                        Modifier.padding(bottom = 2.dp),
+                        style = MaterialTheme.typography.labelMedium.tabular(),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             } else {
-                Text("暂无数据", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    "暂无数据",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
             Spacer(Modifier.weight(1f))
             if (p.alt.isNotEmpty()) {
                 Text(
                     "备选 ${p.alt}${if (p.altOdds > 0.0) " @${ParlayMath.money(p.altOdds)}" else ""}",
-                    fontSize = 11.sp,
+                    Modifier.padding(bottom = 2.dp),
+                    style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
+        Spacer(Modifier.height(Space.md))
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "综合置信度",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.width(Space.sm))
+            ThinProgress(
+                progress = p.confidence / 100f,
+                modifier = Modifier.weight(1f),
+                color = stateColor,
+            )
+            Spacer(Modifier.width(Space.sm))
+            Text(
+                "${p.confidence}",
+                style = MaterialTheme.typography.labelMedium.tabular(),
+                fontWeight = FontWeight.SemiBold,
+                color = stateColor
+            )
+        }
         if (p.reason.isNotBlank()) {
-            Spacer(Modifier.height(3.dp))
+            Spacer(Modifier.height(Space.sm))
             Text(
                 "理由：${p.reason}",
-                fontSize = 11.sp,
-                lineHeight = 16.sp,
+                style = MaterialTheme.typography.bodySmall,
+                lineHeight = 17.sp,
                 color = MaterialTheme.colorScheme.onSurface
             )
         }
         if (p.divergence) {
-            Spacer(Modifier.height(3.dp))
+            Spacer(Modifier.height(Space.xs))
             Text(
-                "与架构主选分歧，综合置信度已按 0.85 折扣",
-                fontSize = 10.sp,
+                "与模型主选分歧，综合置信度已按 0.85 折扣",
+                style = MaterialTheme.typography.labelSmall,
                 lineHeight = 15.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -2302,63 +2432,67 @@ private fun kellyFraction(p: Double, odds: Double): Double {
 private fun fmtSigned(v: Double): String =
     (if (v >= 0) "+" else "−") + String.format(Locale.US, "%.2f", kotlin.math.abs(v))
 
-/** 建议卡片：最具价值用金色、最稳健用主色（严禁红色，红色只代表命中） */
+/** 建议卡片：强调底 + 主色标签（严禁红色，红色只代表命中） */
 @Composable
 private fun AdviceCard(kind: String, pick: CombinedPick, bankroll: Double) {
-    val color = if (kind == "最具价值") Color(0xFFB45309) else MaterialTheme.colorScheme.primary
+    val color = MaterialTheme.colorScheme.primary
     val f = kellyFraction(pick.probability, pick.odds)
     val stake = bankroll * f
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(color.copy(alpha = 0.08f))
-            .border(1.dp, color.copy(alpha = 0.30f), RoundedCornerShape(12.dp))
-            .padding(horizontal = 12.dp, vertical = 10.dp)
+    SurfaceCard(
+        accent = true,
+        contentPadding = PaddingValues(horizontal = Space.lg, vertical = Space.md),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(color)
-                    .padding(horizontal = 6.dp, vertical = 2.dp)
-            ) {
-                Text(kind, fontSize = 10.sp, color = Color.White, fontWeight = FontWeight.Bold)
-            }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            PillTag(kind, color = color)
             Spacer(Modifier.weight(1f))
             Text(
                 "概率 ${pctOf(pick.probability)} · 期望 ${fmtSigned(pick.probability * pick.odds - 1.0)}",
-                fontSize = 10.sp,
+                style = MaterialTheme.typography.labelSmall.tabular(),
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        Spacer(Modifier.height(6.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("${pick.playLabel} ${pick.option}", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = color)
-            Spacer(Modifier.width(8.dp))
+        Spacer(Modifier.height(Space.md))
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+            Text(
+                "${pick.playLabel} ${pick.option}",
+                style = MaterialTheme.typography.titleLarge,
+                color = color
+            )
+            Spacer(Modifier.width(Space.sm))
             Text(
                 "赔率 ${ParlayMath.money(pick.odds)}",
-                fontSize = 11.sp,
+                Modifier.padding(bottom = 2.dp),
+                style = MaterialTheme.typography.labelMedium.tabular(),
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(Space.sm))
         Text(
             if (f > 0.0) {
                 "参考本金 ${ParlayMath.money(bankroll)} 元 → 全凯利建议投入 ${ParlayMath.money(stake)} 元（f = ${pctOf(f)}）"
             } else {
                 "按凯利公式本项不建议投入"
             },
-            fontSize = 11.sp,
+            style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         if (pick.note.isNotBlank()) {
-            Spacer(Modifier.height(4.dp))
-            Text(pick.note, fontSize = 10.sp, lineHeight = 14.sp, color = color)
+            Spacer(Modifier.height(Space.sm))
+            Text(
+                pick.note,
+                style = MaterialTheme.typography.labelSmall,
+                lineHeight = 16.sp,
+                color = color
+            )
         }
         if (pick.reason.isNotBlank()) {
-            Spacer(Modifier.height(4.dp))
-            Text("理由：${pick.reason}", fontSize = 11.sp, lineHeight = 16.sp)
+            Spacer(Modifier.height(Space.sm))
+            Text(
+                "理由：${pick.reason}",
+                style = MaterialTheme.typography.bodySmall,
+                lineHeight = 17.sp,
+                color = MaterialTheme.colorScheme.onSurface
+            )
         }
     }
 }
@@ -2370,13 +2504,22 @@ private fun AnalysisSection(title: String, content: String) {
     Column(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
-            .padding(horizontal = 12.dp, vertical = 9.dp)
+            .clip(Corner.sm)
+            .background(Tone.fill())
+            .padding(horizontal = Space.lg, vertical = Space.md)
     ) {
-        Text(title, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-        Spacer(Modifier.height(3.dp))
-        Text(content, fontSize = 12.sp, lineHeight = 19.sp, color = MaterialTheme.colorScheme.onSurface)
+        Text(
+            title,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary
+        )
+        Spacer(Modifier.height(Space.xs))
+        Text(
+            content,
+            style = MaterialTheme.typography.bodyMedium,
+            lineHeight = 20.sp,
+            color = MaterialTheme.colorScheme.onSurface
+        )
     }
 }
 
@@ -2389,14 +2532,14 @@ private fun fallbackConclusion(cp: CombinedPrediction): String = buildString {
     if (main != null) {
         append("综合结论倾向 ${main.playLabel} ${main.option.ifBlank { "暂无数据" }}")
         if (main.probability > 0.0) {
-            append("（架构概率 ${pctOf(main.probability)}")
+            append("（模型概率 ${pctOf(main.probability)}")
             if (main.odds > 0.0) append("，官方赔率 ${ParlayMath.money(main.odds)}")
             append("）")
         }
         append("，综合置信度 ${main.confidence}。")
     }
     cp.bestValue?.let { append("最具价值方向 ${it.playLabel} ${it.option}。") }
-    append("架构整体置信度 ${cp.engineConf}，数据完整度 ${pctOf(cp.dataComplete)}。")
+    append("模型整体置信度 ${cp.engineConf}，数据完整度 ${pctOf(cp.dataComplete)}。")
     if (cp.key.isNotBlank()) append("\n数据要点：${cp.key}")
     append("\n以上为概率与赔率的数学结果，不构成投注建议。")
 }
@@ -2427,19 +2570,25 @@ private fun DetailScaffold(title: String, onBack: () -> Unit, content: @Composab
         Row(
             Modifier
                 .fillMaxWidth()
-                .padding(start = 4.dp, end = 12.dp, top = 8.dp, bottom = 4.dp),
+                .padding(start = Space.xs, end = Space.lg, top = Space.sm, bottom = Space.xs),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回")
+            IconButton(onClick = onBack, modifier = Modifier.size(40.dp)) {
+                Icon(
+                    Icons.AutoMirrored.Outlined.ArrowBack,
+                    contentDescription = "返回",
+                    modifier = Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
-            Text(title, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.width(Space.xs))
+            Text(title, style = MaterialTheme.typography.titleLarge)
         }
         Column(
             Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp)
+                .padding(horizontal = Space.lg)
         ) {
             content()
         }
@@ -2447,53 +2596,19 @@ private fun DetailScaffold(title: String, onBack: () -> Unit, content: @Composab
 }
 
 @Composable
-private fun TypeTag(text: String, color: Color) {
-    Box(
-        Modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(color.copy(alpha = 0.12f))
-            .padding(horizontal = 10.dp, vertical = 3.dp)
-    ) {
-        Text(text, fontSize = 11.sp, color = color, fontWeight = FontWeight.Medium)
-    }
-}
-
-@Composable
 private fun InfoCard(rows: List<Pair<String, String>>, title: String? = null) {
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(MaterialTheme.colorScheme.surface)
-            .padding(horizontal = 16.dp, vertical = 6.dp)
-    ) {
+    SurfaceCard(contentPadding = PaddingValues(horizontal = Space.lg, vertical = Space.sm)) {
         if (title != null) {
             Text(
                 title,
-                Modifier.padding(top = 8.dp, bottom = 4.dp),
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
+                Modifier.padding(top = Space.sm),
+                style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
         rows.forEachIndexed { i, (k, v) ->
-            Row(
-                Modifier.fillMaxWidth().padding(vertical = 9.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(k, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.weight(1f))
-                Text(v, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface)
-            }
-            if (i != rows.lastIndex) {
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .height(0.5.dp)
-                        .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
-                )
-            }
+            if (i > 0) Hairline()
+            KeyValueRow(k, v, bold = true)
         }
     }
 }

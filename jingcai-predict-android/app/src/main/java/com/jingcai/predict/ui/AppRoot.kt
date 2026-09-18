@@ -1,15 +1,29 @@
 package com.jingcai.predict.ui
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Analytics
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.SportsSoccer
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -18,8 +32,14 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
@@ -46,6 +66,9 @@ import com.jingcai.predict.ui.screens.PlayerDetailScreen
 import com.jingcai.predict.ui.screens.SearchScreen
 import com.jingcai.predict.ui.screens.SlipCenterScreen
 import com.jingcai.predict.ui.screens.TeamDetailScreen
+import com.jingcai.predict.ui.theme.Corner
+import com.jingcai.predict.ui.theme.Space
+import com.jingcai.predict.ui.theme.Tone
 
 @Composable
 fun AppRoot(
@@ -53,7 +76,7 @@ fun AppRoot(
     onThemeChange: (Boolean) -> Unit,
 ) {
     val navController = rememberNavController()
-    val favIds = remember { mutableStateListOf("m1", "m3") }
+    val favIds = remember { mutableStateListOf<String>() }
     val context = LocalContext.current
     // 应用内提示宿主（替代系统 Toast）
     val snackbarHostState = remember { SnackbarHostState() }
@@ -86,68 +109,74 @@ fun AppRoot(
         snackbarHost = { AppSnackbarHost(snackbarHostState) },
         bottomBar = {
             if (!isDetail) {
-                NavigationBar(
-                    containerColor = MaterialTheme.colorScheme.surface
+                // 底部导航：与页面背景同色，顶部 1dp 细线分层；选中态为主色图标 + 主色小字 + 极淡指示块
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.background)
                 ) {
-                    NavigationBarItem(
-                        selected = currentRoute == "matches",
-                        onClick = {
-                            navController.navigate("matches") {
-                                popUpTo(navController.graph.findStartDestination().id) {
-                                    saveState = true
-                                }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        },
-                        icon = {
-                            Icon(Icons.Outlined.SportsSoccer, contentDescription = "赛事中心")
-                        },
-                        label = { Text("赛事中心", fontSize = 11.sp) },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = MaterialTheme.colorScheme.primary,
-                            selectedTextColor = MaterialTheme.colorScheme.primary,
-                            indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
-                        )
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(1.dp)
+                            .background(Tone.hairline())
                     )
-                    NavigationBarItem(
-                        selected = currentRoute == "analysis",
-                        onClick = {
-                            navController.navigate("analysis") {
-                                popUpTo(navController.graph.findStartDestination().id) {
-                                    saveState = true
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .windowInsetsPadding(
+                                WindowInsets.navigationBars.only(
+                                    WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom
+                                )
+                            )
+                            .padding(horizontal = Space.sm, vertical = Space.sm)
+                    ) {
+                        BottomBarItem(
+                            icon = Icons.Outlined.SportsSoccer,
+                            label = "赛事中心",
+                            selected = currentRoute == "matches",
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                navController.navigate("matches") {
+                                    popUpTo(navController.graph.findStartDestination().id) {
+                                        saveState = true
+                                    }
+                                    launchSingleTop = true
+                                    restoreState = true
                                 }
-                                launchSingleTop = true
-                                restoreState = true
                             }
-                        },
-                        icon = { Icon(Icons.Outlined.Analytics, contentDescription = "预测分析") },
-                        label = { Text("预测分析", fontSize = 11.sp) },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = MaterialTheme.colorScheme.primary,
-                            selectedTextColor = MaterialTheme.colorScheme.primary,
-                            indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
                         )
-                    )
-                    NavigationBarItem(
-                        selected = currentRoute == "mine",
-                        onClick = {
-                            navController.navigate("mine") {
-                                popUpTo(navController.graph.findStartDestination().id) {
-                                    saveState = true
+                        BottomBarItem(
+                            icon = Icons.Outlined.Analytics,
+                            label = "预测分析",
+                            selected = currentRoute == "analysis",
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                navController.navigate("analysis") {
+                                    popUpTo(navController.graph.findStartDestination().id) {
+                                        saveState = true
+                                    }
+                                    launchSingleTop = true
+                                    restoreState = true
                                 }
-                                launchSingleTop = true
-                                restoreState = true
                             }
-                        },
-                        icon = { Icon(Icons.Outlined.Person, contentDescription = "我的") },
-                        label = { Text("我的", fontSize = 11.sp) },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = MaterialTheme.colorScheme.primary,
-                            selectedTextColor = MaterialTheme.colorScheme.primary,
-                            indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
                         )
-                    )
+                        BottomBarItem(
+                            icon = Icons.Outlined.Person,
+                            label = "我的",
+                            selected = currentRoute == "mine",
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                navController.navigate("mine") {
+                                    popUpTo(navController.graph.findStartDestination().id) {
+                                        saveState = true
+                                    }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -240,5 +269,62 @@ fun AppRoot(
                 )
             }
         }
+    }
+}
+
+/** 底部导航项：极淡指示块 + 主色图标与文字，未选中为中性色，切换仅做克制的颜色过渡 */
+@Composable
+private fun BottomBarItem(
+    icon: ImageVector,
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val tint by animateColorAsState(
+        targetValue = if (selected) MaterialTheme.colorScheme.primary
+        else MaterialTheme.colorScheme.onSurfaceVariant,
+        animationSpec = tween(180),
+        label = "navTint"
+    )
+    val block by animateColorAsState(
+        targetValue = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+        else Color.Transparent,
+        animationSpec = tween(180),
+        label = "navBlock"
+    )
+    Column(
+        modifier
+            .clip(Corner.md)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick
+            )
+            .padding(vertical = Space.xxs),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            Modifier
+                .clip(Corner.sm)
+                .background(block)
+                .padding(horizontal = Space.md, vertical = 3.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                icon,
+                contentDescription = label,
+                tint = tint,
+                modifier = Modifier.size(21.dp)
+            )
+        }
+        Spacer(Modifier.height(Space.xxs))
+        Text(
+            label,
+            fontSize = 11.sp,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            color = tint,
+            maxLines = 1
+        )
     }
 }

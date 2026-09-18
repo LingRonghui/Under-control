@@ -1,14 +1,15 @@
 package com.jingcai.predict.ui.screens
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -16,18 +17,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Analytics
 import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -45,13 +43,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.jingcai.predict.data.backtest.BacktestOverview
@@ -62,7 +62,19 @@ import com.jingcai.predict.data.llm.BatchState
 import com.jingcai.predict.data.llm.CombinedPick
 import com.jingcai.predict.data.llm.CombinedPrediction
 import com.jingcai.predict.data.llm.PredictionBatchRunner
+import com.jingcai.predict.ui.components.EmptyState
+import com.jingcai.predict.ui.components.Hairline
+import com.jingcai.predict.ui.components.IconBadge
+import com.jingcai.predict.ui.components.PillTag
+import com.jingcai.predict.ui.components.SectionTitle
+import com.jingcai.predict.ui.components.SegmentedTabs
+import com.jingcai.predict.ui.components.SurfaceCard
+import com.jingcai.predict.ui.components.ThinProgress
 import com.jingcai.predict.ui.components.UiMessage
+import com.jingcai.predict.ui.theme.Corner
+import com.jingcai.predict.ui.theme.Space
+import com.jingcai.predict.ui.theme.Tone
+import com.jingcai.predict.ui.theme.tabular
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.Instant
@@ -72,10 +84,10 @@ import java.time.format.DateTimeFormatter
 import kotlin.math.roundToInt
 
 /** 命中红：仅用于「已完赛命中」相关内容 */
-internal val HitRed = Color(0xFFD93A2B)
+internal val HitRed: Color = Tone.hit
 
 /** 未中绿：仅用于「已完赛未命中」相关内容 */
-internal val MissGreen = Color(0xFF1B8A4B)
+internal val MissGreen: Color = Tone.miss
 
 /** 低置信度灰（<50） */
 private val ConfGray = Color(0xFF9AA0A6)
@@ -83,9 +95,8 @@ private val ConfGray = Color(0xFF9AA0A6)
 /**
  * 预测分析：分为「置信度排行」与「回测复盘」两个分类。
  *
- * 数据全部来自 [AiPredictionStore]（综合预测快照缓存）：
- * App 启动即由 [PredictionBatchRunner] 在后台对今明两日赛程批量预测并长期保留，
- * 本页只读缓存、不做二次预测；后台进度与失败重跑入口在两个分类之上，两页都可见。
+ * 数据来源：本地综合预测快照缓存（只读）。App 启动后由后台对今明两日赛程批量生成结果并长期保留，
+ * 本页只读缓存、不做二次预测；后台进度与失败重跑入口位于两个分类之上，两页都可见。
  *
  * @param onOpenMatch 点击排行卡片进入该场比赛详情页（由 AppRoot 负责赋值与跳转）
  */
@@ -132,28 +143,19 @@ fun AnalysisScreen(onOpenMatch: (CombinedPrediction) -> Unit) {
         Row(
             Modifier
                 .fillMaxWidth()
-                .padding(start = 14.dp, end = 14.dp, top = 12.dp),
+                .padding(horizontal = Space.lg, vertical = Space.md),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(
-                Modifier
-                    .size(26.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(MaterialTheme.colorScheme.primary),
-                contentAlignment = Alignment.Center
-            ) {
-                Text("🔮", fontSize = 14.sp)
-            }
+            IconBadge(Icons.Outlined.Analytics, size = 30.dp)
             Text(
                 "预测分析",
-                Modifier.padding(start = 8.dp),
-                fontSize = 17.sp,
-                fontWeight = FontWeight.Bold
+                Modifier.padding(start = Space.sm),
+                style = MaterialTheme.typography.titleMedium
             )
             Spacer(Modifier.weight(1f))
             Text(
                 if (tabIndex == 0) "共 ${shown.size} 场" else "已结算 ${overview.settledMatches} 场",
-                fontSize = 11.sp,
+                style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
@@ -164,22 +166,12 @@ fun AnalysisScreen(onOpenMatch: (CombinedPrediction) -> Unit) {
         }
 
         // 两个分类
-        TabRow(
-            selectedTabIndex = tabIndex,
-            containerColor = MaterialTheme.colorScheme.background,
-            contentColor = MaterialTheme.colorScheme.primary
-        ) {
-            Tab(
-                selected = tabIndex == 0,
-                onClick = { tabIndex = 0 },
-                text = { Text("置信度排行", fontSize = 13.sp) }
-            )
-            Tab(
-                selected = tabIndex == 1,
-                onClick = { tabIndex = 1 },
-                text = { Text("回测复盘", fontSize = 13.sp) }
-            )
-        }
+        SegmentedTabs(
+            items = listOf("置信度排行", "回测复盘"),
+            selectedIndex = tabIndex,
+            onSelect = { tabIndex = it },
+            modifier = Modifier.padding(horizontal = Space.lg, vertical = Space.sm)
+        )
 
         PullToRefreshBox(
             isRefreshing = refreshing,
@@ -220,39 +212,29 @@ private fun RankingTab(
 ) {
     LazyColumn(
         Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        verticalArrangement = Arrangement.spacedBy(Space.md),
+        contentPadding = PaddingValues(bottom = Space.xl)
     ) {
         item { DashboardCard(overview, onRefresh) }
         item {
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 2.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("今明两日综合置信度排行", fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.weight(1f))
-                Text(
-                    "前 ${shown.size} 场",
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+            SectionTitle(
+                title = "今明两日综合置信度排行",
+                subtitle = "按综合置信度降序 · 前 ${shown.size} 场",
+                modifier = Modifier.padding(horizontal = Space.lg, vertical = Space.xs)
+            )
         }
         if (shown.isEmpty()) {
             item {
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 60.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        if (running) "后台正在生成今明两日预测结果…" else "今明两日暂无综合预测结果",
-                        fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                EmptyState(
+                    icon = Icons.Outlined.Analytics,
+                    title = if (running) "正在生成今明两日预测结果" else "今明两日暂无预测结果",
+                    description = if (running) {
+                        "后台批量预测进行中，完成后会自动显示在这里"
+                    } else {
+                        "可下拉刷新，或稍后重新进入本页"
+                    },
+                    modifier = Modifier.padding(horizontal = Space.lg)
+                )
             }
         }
         items(shown.size, key = { shown[it].matchId }) { idx ->
@@ -263,8 +245,8 @@ private fun RankingTab(
                 "预测结果仅供参考，理性购彩",
                 Modifier
                     .fillMaxWidth()
-                    .padding(top = 18.dp, bottom = 8.dp),
-                fontSize = 11.sp,
+                    .padding(top = Space.sm, bottom = Space.sm),
+                style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
                 lineHeight = 18.sp
@@ -273,30 +255,51 @@ private fun RankingTab(
     }
 }
 
-/** 顶部仪表盘：半圆环显示整体命中率 + 各口径真实命中率小卡（高度约屏幕 1/3） */
-@OptIn(ExperimentalLayoutApi::class)
+/* ================= 仪表盘（本页视觉主角） ================= */
+
+/**
+ * 顶部仪表盘：半圆 Canvas 仪表盘显示整体命中率，下方用克制的网格排布
+ * 5 个玩法命中率 + 最具价值 / 最稳健命中率 + 平均综合置信度（高度约屏幕 1/3）。
+ */
 @Composable
 private fun DashboardCard(o: BacktestOverview, onRefresh: () -> Unit) {
-    val cardHeight = (LocalConfiguration.current.screenHeightDp.dp / 3)
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 14.dp, vertical = 4.dp)
-            .height(cardHeight)
-            .clip(RoundedCornerShape(16.dp))
-            .background(MaterialTheme.colorScheme.surface)
-            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f), RoundedCornerShape(16.dp))
-            .padding(12.dp)
+    val cardHeight = (LocalConfiguration.current.screenHeightDp.dp / 3).coerceAtLeast(236.dp)
+    // 整体命中率（0..1），无数据时为 0；仪表盘入场动画的起点固定为 0
+    val rate = (o.overallRate ?: 0.0).toFloat().coerceIn(0f, 1f)
+    var appeared by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { appeared = true }
+    val animated by animateFloatAsState(
+        targetValue = if (appeared) rate else 0f,
+        animationSpec = tween(820),
+        label = "gauge"
+    )
+
+    SurfaceCard(
+        modifier = Modifier
+            .padding(horizontal = Space.lg)
+            .height(cardHeight),
+        accent = true,
+        contentPadding = PaddingValues(Space.lg)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("命中率仪表盘（真实赛果结算）", fontSize = 13.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.weight(1f))
-            IconButton(onClick = onRefresh, modifier = Modifier.size(26.dp)) {
+            Column(Modifier.weight(1f)) {
+                Text("命中率仪表盘", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    if (o.hasData) {
+                        "真实赛果结算 · 已结算 ${o.settledMatches} 场 / ${o.settledPicks} 项"
+                    } else {
+                        "真实赛果结算"
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            IconButton(onClick = onRefresh, modifier = Modifier.size(28.dp)) {
                 Icon(
                     Icons.Outlined.Refresh,
                     contentDescription = "更新赛果",
                     tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(15.dp)
+                    modifier = Modifier.size(16.dp)
                 )
             }
         }
@@ -312,160 +315,150 @@ private fun DashboardCard(o: BacktestOverview, onRefresh: () -> Unit) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         "--",
-                        fontSize = 34.sp,
-                        fontWeight = FontWeight.Black,
+                        style = MaterialTheme.typography.displaySmall.tabular(),
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
                         "整体命中率",
-                        Modifier.padding(top = 2.dp),
-                        fontSize = 11.sp,
+                        Modifier.padding(top = Space.xxs),
+                        style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
                         "暂无已结算数据（比赛完赛并回写真实赛果后自动统计）",
-                        Modifier.padding(top = 6.dp),
-                        fontSize = 10.sp,
+                        Modifier.padding(top = Space.sm),
+                        style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
                         lineHeight = 15.sp
                     )
                 }
             }
-            return@Column
+            return@SurfaceCard
         }
 
-        // 半圆环仪表盘
+        // 半圆仪表盘：极淡轨道 + 品牌主色渐变进度弧（端点圆头）
         Box(
             Modifier
                 .fillMaxWidth()
-                .weight(1f),
-            contentAlignment = Alignment.BottomCenter
+                .weight(1f)
         ) {
             HalfGauge(
-                rate = o.overallRate ?: 0.0,
+                progress = animated,
                 primary = MaterialTheme.colorScheme.primary,
-                track = MaterialTheme.colorScheme.surfaceVariant
+                trackColor = Tone.track(),
+                modifier = Modifier.fillMaxSize()
             )
             Column(
                 Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = 2.dp),
+                    .padding(bottom = Space.xxs),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
                     BacktestStats.rateText(o.overallRate),
-                    fontSize = 30.sp,
-                    fontWeight = FontWeight.Black,
+                    style = MaterialTheme.typography.displaySmall.tabular(),
                     color = MaterialTheme.colorScheme.primary
                 )
                 Text(
                     "整体命中率",
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    "已结算 ${o.settledMatches} 场 / ${o.settledPicks} 项",
-                    fontSize = 10.sp,
+                    style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
 
-        // 各玩法命中率（横向排列，窄屏自动换行）
-        FlowRow(
-            Modifier
-                .fillMaxWidth()
-                .padding(top = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            o.playStats.forEach { s ->
-                MiniStat("${s.label}命中率", BacktestStats.rateText(s.rate))
-            }
-        }
+        Spacer(Modifier.height(Space.sm))
+        Hairline()
+        Spacer(Modifier.height(Space.sm))
 
-        // 价值口径 + 平均综合置信度
-        FlowRow(
-            Modifier
-                .fillMaxWidth()
-                .padding(top = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            MiniStat("最具价值命中率", BacktestStats.rateText(o.bestValueRate))
-            MiniStat("最稳健命中率", BacktestStats.rateText(o.safestRate))
-            MiniStat(
-                "平均综合置信度",
-                o.avgRankConfidence?.let { "${it.roundToInt()}" } ?: "--"
-            )
+        // 指标网格：2 列 × 4 行（玩法命中率 → 平均综合置信度 → 价值口径）
+        val metrics: List<Pair<String, String>> = buildList {
+            o.playStats.forEach { add("${it.label}命中率" to BacktestStats.rateText(it.rate)) }
+            add("平均综合置信度" to (o.avgRankConfidence?.let { v -> "${v.roundToInt()}" } ?: "--"))
+            add("最具价值命中率" to BacktestStats.rateText(o.bestValueRate))
+            add("最稳健命中率" to BacktestStats.rateText(o.safestRate))
+        }
+        metrics.chunked(2).forEachIndexed { index, row ->
+            if (index > 0) Spacer(Modifier.height(Space.xs))
+            Row(Modifier.fillMaxWidth()) {
+                row.forEach { (label, value) -> MetricItem(label, value, Modifier.weight(1f)) }
+                repeat(2 - row.size) { Spacer(Modifier.weight(1f)) }
+            }
         }
     }
 }
 
-/** 半圆仪表盘：底轨 + 按命中率比例填色的主色弧 */
+/** 半圆仪表盘：极淡底轨 + 品牌主色到亮色的线性渐变进度弧（端点圆头） */
 @Composable
-private fun HalfGauge(rate: Double, primary: Color, track: Color) {
-    Canvas(Modifier.fillMaxSize()) {
-        val stroke = 14.dp.toPx()
-        val radius = minOf((size.width - stroke) / 2f, size.height - stroke)
+private fun HalfGauge(
+    progress: Float,
+    primary: Color,
+    trackColor: Color,
+    modifier: Modifier = Modifier,
+    stroke: Dp = 12.dp,
+) {
+    Canvas(modifier) {
+        val sw = stroke.toPx()
+        val radius = minOf((size.width - sw) / 2f, size.height - sw)
         if (radius <= 0f) return@Canvas
         val topLeft = Offset(size.width / 2f - radius, size.height - radius)
         val arcSize = Size(radius * 2f, radius * 2f)
+        val style = Stroke(width = sw, cap = StrokeCap.Round)
+
         drawArc(
-            color = track,
+            color = trackColor,
             startAngle = 180f,
             sweepAngle = 180f,
             useCenter = false,
             topLeft = topLeft,
             size = arcSize,
-            style = Stroke(width = stroke, cap = StrokeCap.Round)
+            style = style
         )
-        val v = rate.coerceIn(0.0, 1.0)
-        if (v > 0.0) {
+
+        val v = progress.coerceIn(0f, 1f)
+        if (v > 0f) {
             drawArc(
-                color = primary,
+                brush = Brush.linearGradient(
+                    colors = listOf(primary, lerp(primary, Color.White, 0.45f)),
+                    start = Offset(topLeft.x, topLeft.y),
+                    end = Offset(topLeft.x + arcSize.width, topLeft.y)
+                ),
                 startAngle = 180f,
-                sweepAngle = (180f * v.toFloat()).coerceAtLeast(1f),
+                sweepAngle = (180f * v).coerceAtLeast(0.6f),
                 useCenter = false,
                 topLeft = topLeft,
                 size = arcSize,
-                style = Stroke(width = stroke, cap = StrokeCap.Round)
+                style = style
             )
         }
     }
 }
 
+/** 指标网格单元：标签（labelSmall）+ 数值（titleSmall，等宽） */
 @Composable
-private fun MiniStat(label: String, value: String) {
-    Column(
-        Modifier
-            .clip(RoundedCornerShape(10.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f))
-            .padding(horizontal = 8.dp, vertical = 4.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+private fun MetricItem(label: String, value: String, modifier: Modifier = Modifier) {
+    Row(
+        modifier.padding(end = Space.sm),
+        verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
-            value,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary
+            label,
+            Modifier.weight(1f),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1
         )
         Text(
-            label,
-            Modifier.padding(top = 1.dp),
-            fontSize = 9.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-            lineHeight = 12.sp
+            value,
+            style = MaterialTheme.typography.titleSmall.tabular(),
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1
         )
     }
 }
 
 /* ================= 后台预测进度 ================= */
-
-/** 界面文案不允许出现「AI」字样：统一改写为「大模型」 */
-private fun noAiText(t: String): String = t.replace("AI", "大模型")
 
 @Composable
 private fun BatchBanner(s: BatchState) {
@@ -473,50 +466,60 @@ private fun BatchBanner(s: BatchState) {
     Column(
         Modifier
             .fillMaxWidth()
-            .padding(horizontal = 14.dp, vertical = 4.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
-            .padding(horizontal = 12.dp, vertical = 9.dp)
+            .padding(horizontal = Space.lg, vertical = Space.xs)
+            .clip(Corner.md)
+            .background(Tone.fill())
+            .padding(horizontal = Space.md, vertical = Space.sm)
     ) {
-        when {
-            s.running -> Row(verticalAlignment = Alignment.CenterVertically) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(13.dp),
-                    strokeWidth = 1.5.dp,
-                    color = MaterialTheme.colorScheme.primary
+        if (s.running) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "正在批量预测今明两日赛程",
+                    Modifier.weight(1f),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
-                    "后台预测中 ${s.done}/${s.total} · ${noAiText(s.current)}",
-                    Modifier.padding(start = 8.dp),
-                    fontSize = 11.sp,
+                    if (s.total > 0) "${s.done}/${s.total}" else "…",
+                    style = MaterialTheme.typography.labelSmall.tabular(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-
-            // 有失败场次时，失败原因与重跑入口在下方统一展示（避免重复）
-            s.failed > 0 -> {}
-
-            s.error != null -> Text(
-                noAiText(s.error),
-                fontSize = 11.sp,
+            if (s.total > 0) {
+                Spacer(Modifier.height(Space.sm))
+                ThinProgress(s.done.toFloat() / s.total)
+            }
+            if (s.current.isNotBlank()) {
+                Spacer(Modifier.height(Space.xs))
+                Text(
+                    s.current,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1
+                )
+            }
+        } else if (s.failed == 0 && s.error != null) {
+            Text(
+                s.error,
+                style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.error
             )
-
-            s.total > 0 -> Text(
+        } else if (s.failed == 0 && s.total > 0) {
+            Text(
                 "后台预测已完成（共 ${s.total} 场）· 结果已保留，重复进入不会重复预测",
-                fontSize = 11.sp,
+                style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
 
         // 失败提示 + 「只重跑出错场次」入口
         if (s.failed > 0) {
-            if (s.running) Spacer(Modifier.height(6.dp))
+            if (s.running) Spacer(Modifier.height(Space.sm))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    "有 ${s.failed} 场预测失败（原因：${noAiText(s.error ?: "未知错误")}）",
+                    "有 ${s.failed} 场未能完成预测（多为网络或服务波动），可只重跑这些场次",
                     Modifier.weight(1f),
-                    fontSize = 11.sp,
+                    style = MaterialTheme.typography.labelSmall,
                     lineHeight = 15.sp,
                     color = MaterialTheme.colorScheme.error
                 )
@@ -528,7 +531,7 @@ private fun BatchBanner(s: BatchState) {
                     // 预测进行中（含重跑中）不能再次触发
                     enabled = !s.running
                 ) {
-                    Text("重新预测出错的 ${s.failed} 场", fontSize = 11.sp)
+                    Text("重新预测出错的 ${s.failed} 场", style = MaterialTheme.typography.labelSmall)
                 }
             }
         }
@@ -545,12 +548,22 @@ private fun confColor(v: Int): Color = when {
     else -> ConfGray
 }
 
-/** 玩法选项文本（含命中配色：命中红、未中绿、未结算中性） */
+/** 命中状态配色：命中红、未中绿、未结算中性 */
 @Composable
 private fun hitColor(hit: Boolean?): Color = when (hit) {
     true -> HitRed
     false -> MissGreen
-    null -> MaterialTheme.colorScheme.primary
+    null -> Tone.pending()
+}
+
+/** 命中状态胶囊：命中（红）/ 未中（绿）/ 待结算（中性） */
+@Composable
+private fun HitPill(hit: Boolean?) {
+    when (hit) {
+        true -> PillTag("命中", color = HitRed)
+        false -> PillTag("未中", color = MissGreen)
+        null -> PillTag("待结算", color = Tone.pending())
+    }
 }
 
 private fun adviceText(p: CombinedPick): String = "${BacktestStats.playLabel(p.play)} ${p.option}"
@@ -564,148 +577,141 @@ private fun fmtTime(ts: Long): String =
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun CombinedCard(p: CombinedPrediction, onOpenMatch: (CombinedPrediction) -> Unit) {
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 14.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(MaterialTheme.colorScheme.surface)
-            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f), RoundedCornerShape(16.dp))
-            .clickable { onOpenMatch(p) }
-            .padding(13.dp)
+    SurfaceCard(
+        modifier = Modifier.padding(horizontal = Space.lg),
+        onClick = { onOpenMatch(p) },
+        contentPadding = PaddingValues(Space.lg)
     ) {
-        // 第一行：联赛 · 编号 · 开赛时间 + 综合置信度
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                "${p.league} · ${p.matchNum} · ${p.kickoff}开赛",
-                Modifier.weight(1f),
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Box(
-                Modifier
-                    .size(46.dp)
-                    .clip(CircleShape)
-                    .background(confColor(p.rankConfidence).copy(alpha = 0.14f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        "${p.rankConfidence}",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Black,
-                        color = confColor(p.rankConfidence)
-                    )
-                    Text(
-                        "综合置信度",
-                        fontSize = 7.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        }
-
-        // 第二行：对阵
+        // 联赛 · 编号 · 开赛时间
         Text(
-            "${p.home} VS ${p.away}",
-            Modifier.padding(top = 4.dp),
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Bold
+            "${p.league} · ${p.matchNum} · ${p.kickoff}开赛",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1
         )
 
-        // 第三行：各玩法综合选项（命中红 / 未中绿，未结算中性）
-        if (p.picks.isNotEmpty()) {
-            FlowRow(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(top = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                p.picks.forEach { pick ->
-                    val fg = hitColor(pick.hit)
-                    Row(
-                        Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(
-                                when (pick.hit) {
-                                    true -> HitRed.copy(alpha = 0.12f)
-                                    false -> MissGreen.copy(alpha = 0.12f)
-                                    null -> MaterialTheme.colorScheme.surfaceVariant
-                                }
-                            )
-                            .padding(horizontal = 8.dp, vertical = 5.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        if (pick.hit != null) {
-                            Text(
-                                if (pick.hit) "命中 " else "未中 ",
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = fg
-                            )
-                        }
-                        Text(
-                            "${BacktestStats.playLabel(pick.play)} ",
-                            fontSize = 10.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            pick.option,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = fg
-                        )
-                    }
-                }
-            }
-        }
-
-        // 第四行：最具价值 / 最稳健（命中情况同色规则）
-        if (p.bestValue != null || p.safest != null) {
-            FlowRow(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(top = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                p.bestValue?.let {
-                    Text(
-                        hitPrefix(it.hit) + "最具价值：${adviceText(it)}",
-                        fontSize = 11.sp,
-                        color = if (it.hit == null) MaterialTheme.colorScheme.primary else hitColor(it.hit)
-                    )
-                }
-                p.safest?.let {
-                    Text(
-                        hitPrefix(it.hit) + "最稳健：${adviceText(it)}",
-                        fontSize = 11.sp,
-                        color = if (it.hit == null) MaterialTheme.colorScheme.onSurfaceVariant else hitColor(it.hit)
-                    )
-                }
-            }
-        }
-
-        // 第五行：模型 + 更新时间
-        FlowRow(
-            Modifier
-                .fillMaxWidth()
-                .padding(top = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalArrangement = Arrangement.spacedBy(3.dp)
-        ) {
+        // 对阵 + 综合置信度
+        Spacer(Modifier.height(Space.xs))
+        Row(verticalAlignment = Alignment.Bottom) {
             Text(
-                if (p.model.isBlank()) "架构结果（未配置模型）" else "模型 ${p.model}",
-                fontSize = 10.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                "${p.home} VS ${p.away}",
+                Modifier.weight(1f),
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 2
+            )
+            Column(
+                Modifier.padding(start = Space.sm),
+                horizontalAlignment = Alignment.End
+            ) {
+                Text(
+                    "${p.rankConfidence}",
+                    style = MaterialTheme.typography.headlineSmall.tabular(),
+                    color = confColor(p.rankConfidence)
+                )
+                Text(
+                    "综合置信度",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        Spacer(Modifier.height(Space.sm))
+        ThinProgress(
+            progress = p.rankConfidence / 100f,
+            color = confColor(p.rankConfidence),
+            height = 4.dp
+        )
+
+        // 各玩法综合选项（命中状态用胶囊：命中红 / 未中绿 / 待结算中性）
+        if (p.picks.isNotEmpty()) {
+            Spacer(Modifier.height(Space.md))
+            FlowRow(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Space.sm),
+                verticalArrangement = Arrangement.spacedBy(Space.sm)
+            ) {
+                p.picks.forEach { PickChip(it) }
+            }
+        }
+
+        // 最具价值 / 最稳健（命中情况同色规则）
+        if (p.bestValue != null || p.safest != null) {
+            Spacer(Modifier.height(Space.md))
+            Column(verticalArrangement = Arrangement.spacedBy(Space.xs)) {
+                p.bestValue?.let { ValueLine("最具价值", it) }
+                p.safest?.let { ValueLine("最稳健", it) }
+            }
+        }
+
+        // 结论来源 + 更新时间（不展示任何具体模型名称）
+        Spacer(Modifier.height(Space.md))
+        Hairline()
+        Spacer(Modifier.height(Space.sm))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                if (p.model.isBlank()) "模型结果（未配置模型）" else "模型综合结论",
+                Modifier.weight(1f),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1
             )
             Text(
                 "更新 ${fmtTime(p.updatedAt)}",
-                fontSize = 10.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                style = MaterialTheme.typography.labelSmall.tabular(),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1
             )
         }
+    }
+}
+
+/** 单玩法选项胶囊：命中状态 + 玩法 + 综合选项 */
+@Composable
+private fun PickChip(pick: CombinedPick) {
+    Row(
+        Modifier
+            .clip(Corner.sm)
+            .background(Tone.fill())
+            .padding(horizontal = Space.sm, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        HitPill(pick.hit)
+        Text(
+            BacktestStats.playLabel(pick.play),
+            Modifier.padding(start = Space.xs),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1
+        )
+        Text(
+            pick.option,
+            Modifier.padding(start = 3.dp),
+            style = MaterialTheme.typography.titleSmall,
+            color = hitColor(pick.hit),
+            maxLines = 1
+        )
+    }
+}
+
+/** 价值口径行：左侧口径名 + 右侧「命中前缀 + 玩法 选项」 */
+@Composable
+private fun ValueLine(tag: String, pick: CombinedPick) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            tag,
+            Modifier.width(52.dp),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1
+        )
+        Text(
+            hitPrefix(pick.hit) + adviceText(pick),
+            Modifier.weight(1f),
+            style = MaterialTheme.typography.labelSmall,
+            color = hitColor(pick.hit),
+            maxLines = 1
+        )
     }
 }
 
@@ -726,8 +732,10 @@ private fun isTodayOrTomorrow(kickoff: String): Boolean {
     val datePart = kickoff.substringBefore(' ').trim()
     if (datePart.isEmpty()) return true
     val today = LocalDate.now()
-    val date = runCatching {
-        LocalDate.parse("${today.year}-$datePart")
-    }.getOrNull() ?: return true
-    return date == today || date == today.plusDays(1)
+    fun parseOf(year: Int): LocalDate? = runCatching { LocalDate.parse("$year-$datePart") }.getOrNull()
+    val date = parseOf(today.year) ?: return true
+    // 跨年补正：以当年拼出的日期若明显早于今天（超过 30 天，例如今天 12-31、比赛 01-01），
+    // 说明实际属于下一年，用 year+1 再解析一次，避免把「明天」误判为过去而过滤掉。
+    val resolved = if (date.isBefore(today.minusDays(30))) parseOf(today.year + 1) ?: date else date
+    return resolved == today || resolved == today.plusDays(1)
 }

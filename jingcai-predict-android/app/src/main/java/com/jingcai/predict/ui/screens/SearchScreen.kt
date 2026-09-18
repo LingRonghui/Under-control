@@ -1,10 +1,12 @@
 package com.jingcai.predict.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -15,8 +17,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -25,10 +25,10 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Clear
 import androidx.compose.material.icons.outlined.EmojiEvents
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.SearchOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -45,14 +45,23 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.jingcai.predict.data.remote.LeagueApi
 import com.jingcai.predict.data.remote.LeagueEntry
+import com.jingcai.predict.ui.components.EmptyState
+import com.jingcai.predict.ui.components.Hairline
+import com.jingcai.predict.ui.components.IconBadge
+import com.jingcai.predict.ui.components.SectionTitle
+import com.jingcai.predict.ui.components.SurfaceCard
+import com.jingcai.predict.ui.theme.Corner
+import com.jingcai.predict.ui.theme.Space
+import com.jingcai.predict.ui.theme.Tone
+import com.jingcai.predict.ui.theme.tabular
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -189,7 +198,7 @@ fun SearchScreen(
         Row(
             Modifier
                 .fillMaxWidth()
-                .padding(start = 4.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
+                .padding(start = Space.xs, end = Space.lg, top = Space.sm, bottom = Space.sm),
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onBack) {
@@ -202,9 +211,11 @@ fun SearchScreen(
                     updateSuggestions(it)
                 },
                 modifier = Modifier.weight(1f),
-                placeholder = { Text("搜索联赛 / 比赛", fontSize = 14.sp) },
+                placeholder = {
+                    Text("搜索联赛 / 比赛", style = MaterialTheme.typography.bodyMedium)
+                },
                 leadingIcon = {
-                    Icon(Icons.Outlined.Search, contentDescription = null, modifier = Modifier.size(20.dp))
+                    Icon(Icons.Outlined.Search, contentDescription = null, modifier = Modifier.size(19.dp))
                 },
                 trailingIcon = {
                     if (query.isNotEmpty()) {
@@ -213,27 +224,32 @@ fun SearchScreen(
                             suggestions = emptyList()
                             showSuggestions = false
                         }) {
-                            Icon(Icons.Outlined.Clear, contentDescription = "清空", modifier = Modifier.size(18.dp))
+                            Icon(Icons.Outlined.Clear, contentDescription = "清空", modifier = Modifier.size(17.dp))
                         }
                     }
                 },
                 singleLine = true,
-                shape = RoundedCornerShape(14.dp),
+                shape = Corner.pill,
+                textStyle = MaterialTheme.typography.bodyMedium,
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
+                    unfocusedBorderColor = Tone.hairline(),
+                    cursorColor = MaterialTheme.colorScheme.primary,
+                    focusedContainerColor = Tone.fill(),
+                    unfocusedContainerColor = Tone.fill()
                 ),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = { doSearch(query) })
             )
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(Space.sm))
             Button(
                 onClick = { doSearch(query) },
                 enabled = query.isNotBlank() && !loading,
-                shape = RoundedCornerShape(12.dp),
+                shape = Corner.pill,
+                contentPadding = PaddingValues(horizontal = Space.lg, vertical = Space.sm),
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
             ) {
-                Text("搜索", fontSize = 14.sp)
+                Text("搜索", style = MaterialTheme.typography.labelLarge)
             }
         }
 
@@ -250,9 +266,12 @@ fun SearchScreen(
                 loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-                        Spacer(Modifier.height(12.dp))
-                        Text("正在加载联赛数据…", fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.height(Space.md))
+                        Text(
+                            "正在加载联赛数据…",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
 
@@ -264,32 +283,15 @@ fun SearchScreen(
                     }
                 )
 
-                results.isEmpty() -> Box(
-                    Modifier.fillMaxSize(), contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            "未找到与“${query.trim()}”相关的联赛",
-                            fontSize = 14.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            "提示：按联赛名称搜索，如 德甲、英超、欧冠",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                            lineHeight = 18.sp
-                        )
-                        if (jcFailed) {
-                            Spacer(Modifier.height(14.dp))
-                            Text(
-                                "竞彩官网数据暂不可达，请稍后重试",
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
-                }
+                results.isEmpty() -> EmptyState(
+                    icon = Icons.Outlined.SearchOff,
+                    title = "未找到与“${query.trim()}”相关的联赛",
+                    description = buildString {
+                        append("提示：按联赛名称搜索，如 德甲、英超、欧冠")
+                        if (jcFailed) append("\n竞彩官网数据暂不可达，请稍后重试")
+                    },
+                    modifier = Modifier.padding(horizontal = Space.lg)
+                )
 
                 else -> LeagueResults(
                     leagues = results,
@@ -300,6 +302,9 @@ fun SearchScreen(
     }
 }
 
+/** 联赛专属强调色（与联赛详情页保持一致） */
+private val LeagueAccent = Color(0xFF7C3AED)
+
 /** 实时联想下拉 */
 @Composable
 private fun SuggestionPanel(
@@ -309,40 +314,43 @@ private fun SuggestionPanel(
     Column(
         Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 4.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(MaterialTheme.colorScheme.surface)
-            .shadow(6.dp, RoundedCornerShape(14.dp))
+            .padding(horizontal = Space.lg, vertical = Space.xs)
+            .clip(Corner.md)
+            .background(Tone.cardBrush())
+            .border(1.dp, Tone.hairline(), Corner.md)
     ) {
         suggestions.forEachIndexed { i, s ->
+            val accent = if (s.type == "联赛") LeagueAccent else MaterialTheme.colorScheme.primary
             Row(
                 Modifier
                     .fillMaxWidth()
                     .clickable { onPick(s) }
-                    .padding(horizontal = 14.dp, vertical = 11.dp),
+                    .padding(horizontal = Space.lg, vertical = Space.md),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Box(
-                    Modifier.size(30.dp).clip(CircleShape).background(
-                        (if (s.type == "联赛") Color(0xFF7C3AED) else MaterialTheme.colorScheme.primary)
-                            .copy(alpha = 0.12f)
-                    ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        if (s.type == "联赛") Icons.Outlined.EmojiEvents else Icons.Outlined.Search,
-                        contentDescription = s.type,
-                        modifier = Modifier.size(16.dp),
-                        tint = if (s.type == "联赛") Color(0xFF7C3AED) else MaterialTheme.colorScheme.primary
-                    )
-                }
-                Spacer(Modifier.width(10.dp))
+                IconBadge(
+                    icon = if (s.type == "联赛") Icons.Outlined.EmojiEvents else Icons.Outlined.Search,
+                    tint = accent,
+                    size = 30.dp
+                )
+                Spacer(Modifier.width(Space.md))
                 Column(Modifier.weight(1f)) {
-                    Text(s.title, fontSize = 14.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+                    Text(
+                        s.title,
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                     if (s.sub.isNotEmpty()) {
-                        Spacer(Modifier.height(1.dp))
-                        Text(s.sub, fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                        Spacer(Modifier.height(Space.xxs))
+                        Text(
+                            s.sub,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
                 }
                 if (s.type != "搜索") {
@@ -350,15 +358,12 @@ private fun SuggestionPanel(
                         Icons.AutoMirrored.Filled.ArrowForward,
                         contentDescription = null,
                         modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
                     )
                 }
             }
             if (i != suggestions.lastIndex) {
-                HorizontalDivider(
-                    Modifier.padding(start = 14.dp, end = 14.dp),
-                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)
-                )
+                Hairline(startPadding = 54.dp, endPadding = Space.lg)
             }
         }
     }
@@ -370,29 +375,33 @@ private val HotKeywords = listOf("英超", "西甲", "德甲", "意甲", "法甲
 
 @Composable
 private fun HotSuggestions(jcFailed: Boolean, onPick: (String) -> Unit) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 24.dp)) {
-        Text("热门联赛", fontSize = 15.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(12.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = Space.lg, vertical = Space.xl)
+    ) {
+        SectionTitle("热门联赛")
+        Spacer(Modifier.height(Space.md))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
             HotKeywords.take(4).forEach { kw ->
                 HotChip(kw, Modifier.weight(1f), onPick)
             }
         }
-        Spacer(Modifier.height(10.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Spacer(Modifier.height(Space.sm))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
             HotKeywords.drop(4).forEach { kw ->
                 HotChip(kw, Modifier.weight(1f), onPick)
             }
         }
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(Space.lg))
         Text(
             buildString {
                 append("输入时实时联想，支持中文搜索联赛")
                 if (jcFailed) append("\n当前无法连接数据服务，请下拉重试")
             },
-            fontSize = 11.sp,
+            style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            lineHeight = 18.sp
+            lineHeight = 17.sp
         )
     }
 }
@@ -401,13 +410,17 @@ private fun HotSuggestions(jcFailed: Boolean, onPick: (String) -> Unit) {
 private fun HotChip(text: String, modifier: Modifier = Modifier, onClick: (String) -> Unit) {
     Box(
         modifier
-            .clip(RoundedCornerShape(10.dp))
-            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
+            .clip(Corner.sm)
+            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.10f))
             .clickable(onClick = { onClick(text) })
-            .padding(vertical = 9.dp),
+            .padding(vertical = Space.sm + 2.dp),
         contentAlignment = Alignment.Center
     ) {
-        Text(text, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
+        Text(
+            text,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.primary
+        )
     }
 }
 
@@ -420,69 +433,66 @@ private fun LeagueResults(
 ) {
     LazyColumn(
         Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        verticalArrangement = Arrangement.spacedBy(Space.sm)
     ) {
         item(key = "sec_l") {
-            Row(
-                Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    Modifier.size(7.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary)
-                )
-                Text(" 联赛", fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.weight(1f))
-                Text("${leagues.size} 条", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+            SectionTitle(
+                title = "联赛",
+                modifier = Modifier.padding(start = Space.lg, end = Space.lg, top = Space.sm),
+                trailing = {
+                    Text(
+                        "${leagues.size} 条",
+                        style = MaterialTheme.typography.labelSmall.tabular(),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            )
         }
         itemsIndexed(leagues, key = { i, l -> "l_${l.id}_$i" }) { _, l ->
             LeagueResultCard(l, onClick = { onLeagueClick(l) })
         }
-        item(key = "bottom") { Spacer(Modifier.height(16.dp)) }
+        item(key = "bottom") { Spacer(Modifier.height(Space.lg)) }
     }
 }
 
 @Composable
 private fun LeagueResultCard(league: LeagueEntry, onClick: () -> Unit) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 14.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(MaterialTheme.colorScheme.surface)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 13.dp),
-        verticalAlignment = Alignment.CenterVertically
+    SurfaceCard(
+        modifier = Modifier.padding(horizontal = Space.lg),
+        onClick = onClick,
+        contentPadding = PaddingValues(horizontal = Space.md, vertical = Space.md)
     ) {
-        // 联赛图标（去掉头像，用图标替代）
-        Box(
-            Modifier.size(36.dp).clip(RoundedCornerShape(10.dp))
-                .background(Color(0xFF7C3AED).copy(alpha = 0.12f)),
-            contentAlignment = Alignment.Center
-        ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            // 联赛图标（去掉头像，用图标替代）
+            IconBadge(
+                icon = Icons.Outlined.EmojiEvents,
+                tint = LeagueAccent,
+                size = 36.dp
+            )
+            Column(Modifier.weight(1f).padding(start = Space.md)) {
+                Text(
+                    league.name.ifEmpty { "未知联赛" },
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.height(Space.xxs))
+                Text(
+                    league.seasons.lastOrNull()?.let { "${it.seasonName} 赛季 · ${league.seasons.size} 个赛季" }
+                        ?: "点击查看赛程赛果",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
             Icon(
-                Icons.Outlined.EmojiEvents,
+                Icons.AutoMirrored.Filled.ArrowForward,
                 contentDescription = null,
-                modifier = Modifier.size(18.dp),
-                tint = Color(0xFF7C3AED)
+                modifier = Modifier.size(16.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
             )
         }
-        Column(Modifier.weight(1f).padding(start = 12.dp)) {
-            Text(league.name.ifEmpty { "未知联赛" }, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
-            Spacer(Modifier.height(2.dp))
-            Text(
-                league.seasons.lastOrNull()?.let { "${it.seasonName} 赛季 · ${league.seasons.size} 个赛季" }
-                    ?: "点击查看赛程赛果",
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1
-            )
-        }
-        Icon(
-            Icons.AutoMirrored.Filled.ArrowForward,
-            contentDescription = null,
-            modifier = Modifier.size(16.dp),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-        )
     }
 }

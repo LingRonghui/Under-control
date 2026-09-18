@@ -1,11 +1,169 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  启动图标 · 前景层：向上张开的大手托起一颗飞起的足球（手掌微合、球逃不出掌心）
+
+  设计口径（与「简约、高级感、质感」一致）：
+  - 四指为圆头细线、指尖向内微收；掌心为一道向上的弧碗 → 用最少笔画读出"手"；
+  - 足球压在指根之上绘制，形成"指在后、球在前"的包裹关系（球在掌中，逃不出去）；
+  - 球体带翠绿光环与浅色渐变，配深空底形成科技感；
+  - 所有几何均落在自适应图标安全区（中心 66dp 圆）内，任何遮罩都不会被裁切。
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- 闪电：竞彩足球预测 -->
+
+    <!-- ===== 手：四指（指尖向内微合）+ 掌心弧碗 ===== -->
     <path
-        android:pathData="M62,26 L38,60 L52,60 L46,84 L72,48 L57,48 Z"
-        android:fillColor="#00E676" />
+        android:pathData="M34,54 C30,46 31,38 36,33"
+        android:strokeWidth="5.6"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round">
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:type="linear"
+                android:startX="34"
+                android:startY="33"
+                android:endX="34"
+                android:endY="54">
+                <item android:offset="0" android:color="#FFF7FBFF" />
+                <item android:offset="1" android:color="#FF9DB2C6" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <path
+        android:pathData="M45,52 C42,44 43,36 48,31"
+        android:strokeWidth="5.6"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round">
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:type="linear"
+                android:startX="45"
+                android:startY="31"
+                android:endX="45"
+                android:endY="52">
+                <item android:offset="0" android:color="#FFF7FBFF" />
+                <item android:offset="1" android:color="#FF9DB2C6" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <path
+        android:pathData="M63,52 C66,44 65,36 60,31"
+        android:strokeWidth="5.6"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round">
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:type="linear"
+                android:startX="63"
+                android:startY="31"
+                android:endX="63"
+                android:endY="52">
+                <item android:offset="0" android:color="#FFF7FBFF" />
+                <item android:offset="1" android:color="#FF9DB2C6" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <path
+        android:pathData="M74,54 C78,46 77,38 72,33"
+        android:strokeWidth="5.6"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round">
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:type="linear"
+                android:startX="74"
+                android:startY="33"
+                android:endX="74"
+                android:endY="54">
+                <item android:offset="0" android:color="#FFF7FBFF" />
+                <item android:offset="1" android:color="#FF9DB2C6" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- 掌心弧碗（含拇指根部的一侧收口） -->
+    <path
+        android:pathData="M34,54 C30,62 33,70 41,75 C48,80 60,80 67,75 C75,70 78,62 74,54"
+        android:strokeWidth="6.4"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round">
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:type="linear"
+                android:startX="34"
+                android:startY="54"
+                android:endX="74"
+                android:endY="80">
+                <item android:offset="0" android:color="#FFDCE8F3" />
+                <item android:offset="1" android:color="#FF8DA3B8" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- 拇指：向左下方微微张开，坐实"手掌"的读法 -->
+    <path
+        android:pathData="M36,64 C30,63 27,59 26,55"
+        android:strokeWidth="5.4"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round">
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:type="linear"
+                android:startX="36"
+                android:startY="64"
+                android:endX="26"
+                android:endY="55">
+                <item android:offset="0" android:color="#FFCFDEEB" />
+                <item android:offset="1" android:color="#FF8DA3B8" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- ===== 足球：翠绿光环 + 浅色球体 + 官方风格五边形拼块 ===== -->
+    <path android:pathData="M54,36 m-13.5,0 a13.5,13.5 0 1,0 27,0 a13.5,13.5 0 1,0 -27,0">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="radial"
+                android:centerX="54"
+                android:centerY="36"
+                android:gradientRadius="13.5">
+                <item android:offset="0" android:color="#3D00E676" />
+                <item android:offset="0.7" android:color="#1400C853" />
+                <item android:offset="1" android:color="#0000C853" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <path android:pathData="M54,36 m-10,0 a10,10 0 1,0 20,0 a10,10 0 1,0 -20,0">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="46"
+                android:startY="28"
+                android:endX="62"
+                android:endY="46">
+                <item android:offset="0" android:color="#FFFFFFFF" />
+                <item android:offset="1" android:color="#FF74E3A8" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- 拼接缝（深空色，弱对比，缩小后仍能读出"足球"） -->
+    <path
+        android:pathData="M54,32.4 L54,26 M57.42,34.89 L63.51,32.91 M56.12,38.91 L59.88,44.09 M51.88,38.91 L48.12,44.09 M50.58,34.89 L44.49,32.91"
+        android:strokeColor="#66081018"
+        android:strokeWidth="1.5"
+        android:strokeLineCap="round" />
+
+    <!-- 中央五边形 -->
+    <path
+        android:pathData="M54,32.4 L57.42,34.89 L56.12,38.91 L51.88,38.91 L50.58,34.89 Z"
+        android:fillColor="#FF0A1119" />
 </vector>
