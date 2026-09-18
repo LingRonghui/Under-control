@@ -21,6 +21,17 @@ data class RemoteMatch(
     val hhad: Triple<String, String, String>?,  // 让球 胜 平 负
     val goalLine: String,
     val status: String,
+    val crs: Map<String, String>? = null,   // 全场比分玩法：键 s{H}s{A} → 赔率；s1sh/s1sd/s1sa=胜/平/负其他
+    val hafu: Map<String, String>? = null,  // 半全场玩法：hh/hd/ha/dh/dd/da/ah/ad/aa → 赔率
+    val ttg: Map<String, String>? = null,   // 总进球数：s0~s7 → 赔率
+    val homeRank: String = "",              // 主队联赛排名
+    val awayRank: String = "",              // 客队联赛排名
+)
+
+/** 竞彩某一日期的赛事集合 */
+data class MatchDay(
+    val date: String,
+    val matches: List<RemoteMatch>,
 )
 
 object JingCaiApi {
@@ -42,11 +53,16 @@ object JingCaiApi {
             .build()
     }
 
-    /**
-     * 拉取近两日全部竞彩足球赛事（真实数据）。
-     * 失败时抛出异常，由调用方决定降级策略。
-     */
-    suspend fun fetchMatches(): List<RemoteMatch> = withContext(Dispatchers.IO) {
+    /** 拉取全部竞彩足球赛事（近两日合并），失败时抛出异常 */
+    suspend fun fetchMatches(): List<RemoteMatch> = fetchMatchDays().flatMap { it.matches }
+
+    /** 拉取按日期分组的竞彩足球赛事（通常为今日+明日），失败时抛出异常 */
+    suspend fun fetchMatchDays(): List<MatchDay> {
+        val body = fetchBody()
+        return parseDays(body)
+    }
+
+    private suspend fun fetchBody(): String = withContext(Dispatchers.IO) {
         HttpClient.client.newCall(buildRequest()).execute().use { resp ->
             if (!resp.isSuccessful) {
                 throw IOException("竞彩接口 HTTP ${resp.code}")
@@ -56,25 +72,27 @@ object JingCaiApi {
             if (!body.trimStart().startsWith("{")) {
                 throw IOException("竞彩接口返回异常内容（可能被反爬拦截）")
             }
-            parse(body)
+            body
         }
     }
 
-    private fun parse(json: String): List<RemoteMatch> {
+    private fun parseDays(json: String): List<MatchDay> {
         val root = JSONObject(json)
         if (root.optString("errorCode") != "0") {
             throw IOException("竞彩接口返回错误: ${root.optString("errorMessage")}")
         }
         val value = root.optJSONObject("value") ?: return emptyList()
         val dayList = value.optJSONArray("matchInfoList") ?: return emptyList()
-        val result = mutableListOf<RemoteMatch>()
+        val result = mutableListOf<MatchDay>()
         for (i in 0 until dayList.length()) {
             val day = dayList.optJSONObject(i) ?: continue
             val subs = day.optJSONArray("subMatchList") ?: continue
+            val matches = mutableListOf<RemoteMatch>()
             for (j in 0 until subs.length()) {
                 val m = subs.optJSONObject(j) ?: continue
-                result.add(parseMatch(m))
+                matches.add(parseMatch(m))
             }
+            result.add(MatchDay(day.optString("matchDate", ""), matches))
         }
         return result
     }
@@ -93,6 +111,11 @@ object JingCaiApi {
             hhad = parseOdds(hhadObj),
             goalLine = hhadObj?.optString("goalLine", "") ?: "",
             status = m.optString("matchStatus", ""),
+            crs = parseOddsMap(m.optJSONObject("crs")),
+            hafu = parseOddsMap(m.optJSONObject("hafu")),
+            ttg = parseOddsMap(m.optJSONObject("ttg")),
+            homeRank = m.optString("homeRank", ""),
+            awayRank = m.optString("awayRank", ""),
         )
     }
 
@@ -103,5 +126,18 @@ object JingCaiApi {
         val a = obj.optString("a", "")
         if (h.isEmpty() || d.isEmpty() || a.isEmpty()) return null
         return Triple(h, d, a)
+    }
+
+    /** 玩法赔率表：过滤掉 flag 字段（以 f 结尾）与元信息字段，保留 选项→赔率 */
+    private fun parseOddsMap(obj: JSONObject?): Map<String, String>? {
+        if (obj == null) return null
+        val map = mutableMapOf<String, String>()
+        val meta = setOf("goalLine", "goalLineValue", "updateDate", "updateTime", "id", "remark")
+        obj.keys().forEach { k ->
+            if (k in meta || k.endsWith("f")) return@forEach
+            val v = obj.optString(k)
+            if (v.isNotEmpty() && v != "0") map[k] = v
+        }
+        return map.ifEmpty { null }
     }
 }

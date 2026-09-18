@@ -28,6 +28,23 @@ data class SearchPlayer(
     val photo: String,
 )
 
+data class SearchLeague(
+    val id: String,
+    val name: String,
+    val country: String,
+    val badge: String,
+)
+
+/** TheSportsDB 单场比赛（近期战绩/后续赛事） */
+data class TeamEvent(
+    val home: String,
+    val away: String,
+    val homeScore: String,   // 空串表示未开赛/无比分
+    val awayScore: String,
+    val date: String,
+    val status: String,      // Match Finished / Not Started ...
+)
+
 object TeamDbApi {
 
     private const val BASE = "https://www.thesportsdb.com/api/v1/json/3/"
@@ -50,6 +67,39 @@ object TeamDbApi {
         val url = BASE + "searchplayers.php?p=" + URLEncoder.encode(query, "UTF-8")
         val json = get(url)
         parsePlayers(json)
+    }
+
+    /** 球队近期赛事（eventslast，通常近 5 场），失败时抛出异常 */
+    suspend fun lastEvents(teamId: String): List<TeamEvent> = withContext(Dispatchers.IO) {
+        val url = BASE + "eventslast.php?id=" + URLEncoder.encode(teamId, "UTF-8")
+        val json = get(url)
+        parseEvents(json)
+    }
+
+    /** 球队后续赛事（eventsnext 下一场），失败时抛出异常 */
+    suspend fun nextEvent(teamId: String): TeamEvent? = withContext(Dispatchers.IO) {
+        val url = BASE + "eventsnext.php?id=" + URLEncoder.encode(teamId, "UTF-8")
+        val json = get(url)
+        parseEvents(json).firstOrNull()
+    }
+
+    /**
+     * 搜索联赛：TheSportsDB 的 search_all_leagues.php 在 v3 key 下仅支持 s=Soccer 全量拉取，
+     * 因此一次性拉取足球联赛列表后本地按名称/国家过滤，并缓存结果。
+     */
+    private var leagueCache: List<SearchLeague>? = null
+
+    suspend fun searchLeagues(query: String): List<SearchLeague> = withContext(Dispatchers.IO) {
+        val all = leagueCache ?: run {
+            val url = BASE + "search_all_leagues.php?s=Soccer"
+            val json = get(url)
+            parseLeagues(json).also { leagueCache = it }
+        }
+        val q = query.trim().lowercase()
+        if (q.isEmpty()) return@withContext emptyList()
+        all.filter {
+            it.name.lowercase().contains(q) || it.country.lowercase().contains(q)
+        }
     }
 
     private fun get(url: String): String {
@@ -96,6 +146,44 @@ object TeamDbApi {
                     nationality = p.optString("strNationality", ""),
                     position = p.optString("strPosition", ""),
                     photo = p.optString("strCutout", p.optString("strThumb", "")),
+                )
+            )
+        }
+        return out
+    }
+
+    private fun parseLeagues(json: String): List<SearchLeague> {
+        val arr: JSONArray = JSONObject(json).optJSONArray("countries") ?: return emptyList()
+        val out = mutableListOf<SearchLeague>()
+        for (i in 0 until arr.length()) {
+            val l = arr.optJSONObject(i) ?: continue
+            if (l.optString("strSport", "Soccer") != "Soccer") continue
+            out.add(
+                SearchLeague(
+                    id = l.optString("idLeague", ""),
+                    name = l.optString("strLeague", ""),
+                    country = l.optString("strCountry", ""),
+                    badge = "",
+                )
+            )
+        }
+        return out
+    }
+
+    private fun parseEvents(json: String): List<TeamEvent> {
+        val arr: JSONArray = JSONObject(json).optJSONArray("results") ?: return emptyList()
+        val out = mutableListOf<TeamEvent>()
+        for (i in 0 until arr.length()) {
+            val e = arr.optJSONObject(i) ?: continue
+            if (e.optString("strSport", "Soccer") != "Soccer") continue
+            out.add(
+                TeamEvent(
+                    home = e.optString("strHomeTeam", ""),
+                    away = e.optString("strAwayTeam", ""),
+                    homeScore = e.optString("intHomeScore", ""),
+                    awayScore = e.optString("intAwayScore", ""),
+                    date = e.optString("dateEvent", "").take(10),
+                    status = e.optString("strStatus", ""),
                 )
             )
         }

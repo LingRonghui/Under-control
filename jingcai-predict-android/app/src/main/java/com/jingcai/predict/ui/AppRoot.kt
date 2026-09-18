@@ -26,9 +26,14 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.jingcai.predict.ui.screens.AnalysisScreen
+import com.jingcai.predict.ui.screens.DetailHolder
+import com.jingcai.predict.ui.screens.LeagueDetailScreen
+import com.jingcai.predict.ui.screens.MatchDetailScreen
 import com.jingcai.predict.ui.screens.MatchesScreen
 import com.jingcai.predict.ui.screens.MineScreen
+import com.jingcai.predict.ui.screens.PlayerDetailScreen
 import com.jingcai.predict.ui.screens.SearchScreen
+import com.jingcai.predict.ui.screens.TeamDetailScreen
 
 @Composable
 fun AppRoot(
@@ -44,72 +49,79 @@ fun AppRoot(
 
     val backStack by navController.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.route
+    // 详情页隐藏底部导航栏
+    val isDetail = currentRoute == "teamDetail" ||
+        currentRoute == "playerDetail" ||
+        currentRoute == "matchDetail" ||
+        currentRoute == "leagueDetail"
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
-            NavigationBar(
-                containerColor = MaterialTheme.colorScheme.surface
-            ) {
-                NavigationBarItem(
-                    selected = currentRoute == "matches",
-                    onClick = {
-                        navController.navigate("matches") {
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                saveState = true
+            if (!isDetail) {
+                NavigationBar(
+                    containerColor = MaterialTheme.colorScheme.surface
+                ) {
+                    NavigationBarItem(
+                        selected = currentRoute == "matches",
+                        onClick = {
+                            navController.navigate("matches") {
+                                popUpTo(navController.graph.findStartDestination().id) {
+                                    saveState = true
+                                }
+                                launchSingleTop = true
+                                restoreState = true
                             }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    },
-                    icon = {
-                        Icon(Icons.Outlined.SportsSoccer, contentDescription = "赛事中心")
-                    },
-                    label = { Text("赛事中心", fontSize = 11.sp) },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = MaterialTheme.colorScheme.primary,
-                        selectedTextColor = MaterialTheme.colorScheme.primary,
-                        indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+                        },
+                        icon = {
+                            Icon(Icons.Outlined.SportsSoccer, contentDescription = "赛事中心")
+                        },
+                        label = { Text("赛事中心", fontSize = 11.sp) },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = MaterialTheme.colorScheme.primary,
+                            selectedTextColor = MaterialTheme.colorScheme.primary,
+                            indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+                        )
                     )
-                )
-                NavigationBarItem(
-                    selected = currentRoute == "analysis",
-                    onClick = {
-                        navController.navigate("analysis") {
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                saveState = true
+                    NavigationBarItem(
+                        selected = currentRoute == "analysis",
+                        onClick = {
+                            navController.navigate("analysis") {
+                                popUpTo(navController.graph.findStartDestination().id) {
+                                    saveState = true
+                                }
+                                launchSingleTop = true
+                                restoreState = true
                             }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    },
-                    icon = { Icon(Icons.Outlined.Analytics, contentDescription = "预测分析") },
-                    label = { Text("预测分析", fontSize = 11.sp) },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = MaterialTheme.colorScheme.primary,
-                        selectedTextColor = MaterialTheme.colorScheme.primary,
-                        indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+                        },
+                        icon = { Icon(Icons.Outlined.Analytics, contentDescription = "预测分析") },
+                        label = { Text("预测分析", fontSize = 11.sp) },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = MaterialTheme.colorScheme.primary,
+                            selectedTextColor = MaterialTheme.colorScheme.primary,
+                            indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+                        )
                     )
-                )
-                NavigationBarItem(
-                    selected = currentRoute == "mine",
-                    onClick = {
-                        navController.navigate("mine") {
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                saveState = true
+                    NavigationBarItem(
+                        selected = currentRoute == "mine",
+                        onClick = {
+                            navController.navigate("mine") {
+                                popUpTo(navController.graph.findStartDestination().id) {
+                                    saveState = true
+                                }
+                                launchSingleTop = true
+                                restoreState = true
                             }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    },
-                    icon = { Icon(Icons.Outlined.Person, contentDescription = "我的") },
-                    label = { Text("我的", fontSize = 11.sp) },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = MaterialTheme.colorScheme.primary,
-                        selectedTextColor = MaterialTheme.colorScheme.primary,
-                        indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+                        },
+                        icon = { Icon(Icons.Outlined.Person, contentDescription = "我的") },
+                        label = { Text("我的", fontSize = 11.sp) },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = MaterialTheme.colorScheme.primary,
+                            selectedTextColor = MaterialTheme.colorScheme.primary,
+                            indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+                        )
                     )
-                )
+                }
             }
         }
     ) { padding ->
@@ -130,14 +142,33 @@ fun AppRoot(
                             toast("已收藏")
                         }
                     },
-                    onSearchClick = { navController.navigate("search") }
+                    onSearchClick = { navController.navigate("search") },
+                    onOpenMatch = { match ->
+                        DetailHolder.match = match
+                        navController.navigate("matchDetail")
+                    }
                 )
             }
             composable("search") {
                 SearchScreen(
                     onBack = { navController.popBackStack() },
-                    onShowToast = toast
+                    onOpenLeague = { league ->
+                        DetailHolder.league = league
+                        navController.navigate("leagueDetail")
+                    },
                 )
+            }
+            composable("leagueDetail") {
+                LeagueDetailScreen(onBack = { navController.popBackStack() })
+            }
+            composable("teamDetail") {
+                TeamDetailScreen(onBack = { navController.popBackStack() })
+            }
+            composable("playerDetail") {
+                PlayerDetailScreen(onBack = { navController.popBackStack() })
+            }
+            composable("matchDetail") {
+                MatchDetailScreen(onBack = { navController.popBackStack() })
             }
             composable("analysis") { AnalysisScreen() }
             composable("mine") {
